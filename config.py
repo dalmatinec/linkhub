@@ -1,0 +1,2 @@
+TOKEN = "PUT_YOUR_BOT_TOKEN_HERE"
+SUPER_ADMIN_ID = 000000000  # ваш telegram_id
