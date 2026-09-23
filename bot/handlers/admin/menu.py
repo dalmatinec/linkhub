@@ -40,6 +40,8 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
     sid = str(item.id)
 
     lines = [f"📋 <b>{'Главное меню (приветствие)' if is_root else escape(item.label)}</b>"]
+    if is_root:
+        lines.append("<i>Первый экран после /start. Можно вставить <code>{имя}</code> — имя пользователя.</i>")
     if not is_root:
         lines.append(f"Тип: {KINDS.get(item.kind, item.kind)}")
         lines.append(f"Иконка: {icon_line(item.icon)} · Цвет: {style_name(item.style)}")

@@ -349,5 +349,10 @@ def test_menu_editing(tmp_path):
         await h.click(OWNER, f"x:iact:{search.id}")
         await h.send(USER, "/start")
         assert h.labels(USER)[-1] == ["📢 Наш канал"] and ["🔍 Поиск"] not in h.labels(USER)
+        await h.click(OWNER, "a:log:0")
+        log_text = h.screen(OWNER).text
+        assert "добавил кнопку меню" in log_text and "item." not in log_text, "журнал по-русски"
+        await h.click(OWNER, "a:text:city_shops")
+        assert "{город}" in h.screen(OWNER).text and "city_shops" not in h.screen(OWNER).text
         await h.stop()
     run(scenario())

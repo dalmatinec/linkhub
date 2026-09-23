@@ -15,10 +15,17 @@ T = TypeVar("T")
 BLANK = "⠀"  # Telegram не принимает пустой текст
 
 
+# Подстановки в текстах: в админке пишутся по-русски, английские оставлены для совместимости
+PLACEHOLDERS = {"first_name": "имя", "city": "город", "query": "запрос", "shop": "магазин"}
+
+
 def fill(html: str, **values: object) -> str:
-    """Подставляет {ключ} в HTML-текст из базы, экранируя значения."""
+    """Подставляет {имя}, {город}… в HTML-текст из базы, экранируя значения."""
     for key, value in values.items():
-        html = html.replace("{" + key + "}", escape(str(value)))
+        safe = escape(str(value))
+        html = html.replace("{" + key + "}", safe)
+        if key in PLACEHOLDERS:
+            html = html.replace("{" + PLACEHOLDERS[key] + "}", safe)
     return html
 
 

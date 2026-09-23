@@ -13,18 +13,35 @@ from .core import (
 TEXT_NAMES = {
     "cities": "🏙 Экран выбора города",
     "other_cities": "🌍 Экран «Другие города»",
-    "city_shops": "🏙 Заголовок списка магазинов города ({city})",
-    "empty": "📭 «Здесь пока пусто»",
+    "city_shops": "🏙 Список магазинов города",
+    "empty": "📭 Когда в списке пусто",
     "search_prompt": "🔍 Приглашение к поиску",
-    "search_results": "🔍 Результаты поиска ({query})",
-    "search_empty": "🔍 Ничего не найдено ({query})",
-    "report_prompt": "🚩 Просьба описать жалобу ({shop})",
+    "search_results": "🔍 Результаты поиска",
+    "search_empty": "🔍 Ничего не найдено",
+    "report_prompt": "🚩 Просьба описать жалобу",
     "report_thanks": "🚩 Спасибо за жалобу",
     "report_limit": "🚩 Слишком частые жалобы",
-    "verified_badge": "✅ Плашка «Проверенный»",
+    "verified_badge": "✅ Плашка «Проверенный магазин»",
     "banned": "🚫 Сообщение забаненному",
-    "flood": "🐢 Предупреждение антифлуда",
+    "flood": "🐢 «Слишком быстро» (антифлуд)",
     "shop_unavailable": "🙈 Магазин недоступен",
+}
+# Где показывается текст и что в него можно подставить
+TEXT_HELP = {
+    "cities": ("Над кнопками городов после нажатия «Выбрать город».", {}),
+    "other_cities": ("Над списком городов после нажатия «Другие города».", {}),
+    "city_shops": ("Над списком магазинов выбранного города.", {"город": "название города"}),
+    "empty": ("Добавляется к экрану, когда в городе или подборке ещё нет магазинов.", {}),
+    "search_prompt": ("После нажатия «Поиск» — приглашение написать запрос.", {}),
+    "search_results": ("Над найденными магазинами.", {"запрос": "то, что искал пользователь"}),
+    "search_empty": ("Когда поиск ничего не нашёл.", {"запрос": "то, что искал пользователь"}),
+    "report_prompt": ("После нажатия «Пожаловаться» в карточке.", {"магазин": "название магазина"}),
+    "report_thanks": ("После отправки жалобы.", {}),
+    "report_limit": ("Всплывает, если пользователь жалуется слишком часто.", {}),
+    "verified_badge": ("Сверху карточки магазина с отметкой «Проверенный».", {}),
+    "banned": ("Всплывает у забаненного пользователя.", {}),
+    "flood": ("Всплывает, когда пользователь жмёт кнопки слишком быстро.", {}),
+    "shop_unavailable": ("Всплывает, если магазин скрыли, а у человека осталась старая кнопка.", {}),
 }
 BUTTON_NAMES = {
     "back": "◀️ Назад",
@@ -40,13 +57,14 @@ MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "search_prompt"}
 async def view_texts(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
     rows: Rows = [[b("👋 Приветствие (/start)", f"a:item:{cat.root_id}")]]
-    rows += [[b(TEXT_NAMES.get(k, k), f"a:text:{k}")] for k in cat.texts]
+    rows += [[b(TEXT_NAMES[k], f"a:text:{k}")] for k in TEXT_NAMES if k in cat.texts]
     rows.append([button("— Системные кнопки —", cb="noop")])
-    rows += grid([b(BUTTON_NAMES.get(k, k), f"a:btn:{k}") for k in cat.buttons], 2)
+    rows += grid([b(BUTTON_NAMES[k], f"a:btn:{k}") for k in BUTTON_NAMES if k in cat.buttons], 2)
     rows.append(back_btn("a:home"))
     html = ("📝 <b>Тексты и кнопки</b>\n\n"
-            "В фигурных скобках — подстановки, например <code>{city}</code> заменится названием города.\n"
-            "В приветствии доступно <code>{first_name}</code> — имя пользователя.")
+            "Выберите, что изменить. Внутри каждого текста написано, где он показывается.\n"
+            "Слова в фигурных скобках бот заменяет сам: <code>{имя}</code> — имя пользователя, "
+            "<code>{город}</code> — название города.")
     return html, rows
 
 
@@ -56,7 +74,13 @@ async def view_text(ctx: Ctx, key: str) -> ViewResult:
     row = await app.db.fetchone("SELECT * FROM texts WHERE key = ?", (key,))
     if row is None:
         return await view_texts(ctx)
-    html = (f"📝 <b>{TEXT_NAMES.get(key, key)}</b>\n"
+    where, subs = TEXT_HELP.get(key, ("", {}))
+    subs_line = ""
+    if subs:
+        subs_line = "Можно вставить: " + ", ".join(
+            f"<code>{{{k}}}</code> — {v}" for k, v in subs.items()) + "\n"
+    html = (f"📝 <b>{TEXT_NAMES.get(key, 'Текст')}</b>\n"
+            f"<i>{where}</i>\n{subs_line}"
             f"Медиа: {media_line(app, row['media_id'])}\n\n"
             f"<b>Сейчас так:</b>\n\n{row['html'] or '<i>пусто</i>'}")
     rows = editor_rows("text", key, row, label=False, rich=True)
@@ -71,7 +95,7 @@ async def view_button(ctx: Ctx, key: str) -> ViewResult:
     row = await ctx.app.db.fetchone("SELECT * FROM buttons WHERE key = ?", (key,))
     if row is None:
         return await view_texts(ctx)
-    html = (f"🔘 <b>{BUTTON_NAMES.get(key, key)}</b>\n\n"
+    html = (f"🔘 <b>{BUTTON_NAMES.get(key, 'Кнопка')}</b>\n\n"
             f"Текст: {escape(row['label'])}\n"
             f"Иконка: {icon_line(row['icon'])}\n"
             f"Цвет: {style_name(row['style'])}\n\n"

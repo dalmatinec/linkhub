@@ -206,11 +206,39 @@ async def in_backup_restore(ctx: Ctx, message: Message):
 ACTION_NAMES = {
     "shop.create": "создал магазин", "shop.delete": "удалил магазин", "shop.publish": "опубликовал магазин",
     "shop.hide": "скрыл магазин", "shop.tag_on": "поставил метку", "shop.tag_off": "снял метку",
-    "shop.tag_expired": "срок метки истёк", "shop.tag_expiry": "срок метки", "shop.contacts": "контакты",
-    "shop.verified": "«Проверенный»", "user.ban": "бан", "user.unban": "разбан", "admin.add": "добавил админа",
-    "admin.remove": "снял админа", "admin.perms": "права админа", "broadcast.start": "рассылка",
-    "backup.create": "бэкап", "backup.restore": "восстановление", "settings": "настройка",
+    "shop.tag_expired": "срок метки истёк", "shop.tag_expiry": "изменил срок метки", "shop.contacts": "изменил контакты",
+    "shop.verified": "переключил «Проверенный»", "menu.create": "добавил кнопку меню", "menu.delete": "удалил кнопку меню",
+    "menu.toggle": "скрыл/показал кнопку меню", "city.create": "добавил города", "city.delete": "удалил город",
+    "tag.create": "создал метку", "tag.delete": "удалил метку", "user.ban": "забанил", "user.unban": "разбанил",
+    "admin.add": "добавил админа", "admin.remove": "снял админа", "admin.perms": "изменил права админа",
+    "broadcast.start": "запустил рассылку", "backup.create": "сделал бэкап", "backup.restore": "восстановил из бэкапа",
+    "settings": "изменил настройку", "report.done": "закрыл жалобу",
 }
+# универсальные правки: «<что>.<поле>»
+OBJECT_NAMES = {"item": "кнопка меню", "text": "текст", "btn": "системная кнопка", "city": "город", "shop": "магазин",
+                "tag": "метка"}
+FIELD_NAMES = {"label": "изменил текст кнопки", "html": "изменил текст", "media": "изменил медиа",
+               "media_removed": "убрал медиа"}
+
+
+def describe(ctx: Ctx, action: str, details: str) -> str:
+    """Понятная строка журнала вместо служебных ключей."""
+    from .content import BUTTON_NAMES, TEXT_NAMES
+    cat = ctx.app.catalog
+    if action in ACTION_NAMES:
+        return f"{ACTION_NAMES[action]} {escape(details[:60])}"
+    obj, _, field = action.partition(".")
+    what = FIELD_NAMES.get(field, field)
+    key = details.split(":", 1)[0]
+    name = {
+        "text": lambda: TEXT_NAMES.get(key, "текст"),
+        "btn": lambda: BUTTON_NAMES.get(key, "кнопка"),
+        "shop": lambda: cat.shops[int(key)].label if key.isdigit() and int(key) in cat.shops else f"#{key}",
+        "item": lambda: (cat.menu[int(key)].label or "главное меню") if key.isdigit() and int(key) in cat.menu else f"#{key}",
+        "city": lambda: cat.cities[int(key)].label if key.isdigit() and int(key) in cat.cities else f"#{key}",
+        "tag": lambda: cat.tags[int(key)].label if key.isdigit() and int(key) in cat.tags else f"#{key}",
+    }.get(obj, lambda: details)()
+    return f"{what} — {OBJECT_NAMES.get(obj, obj)} «{escape(str(name)[:40])}»"
 
 
 @view("log", "log")
@@ -220,10 +248,12 @@ async def view_log(ctx: Ctx, page: str = "0") -> ViewResult:
     rows_db = await ctx.app.db.fetchall(
         "SELECT * FROM admin_log ORDER BY id DESC LIMIT ? OFFSET ?", (size + 1, p * size))
     tz = int(ctx.app.catalog.setting("tz_offset", 5))
+    names = {r["id"]: r["first_name"] for r in await ctx.app.db.fetchall(
+        "SELECT id, first_name FROM users WHERE id IN (SELECT DISTINCT admin_id FROM admin_log)")}
     lines = [
         f"<code>{fmt_date(r['ts'], tz)}</code> "
-        f"{'🤖' if r['admin_id'] == 0 else r['admin_id']}: {ACTION_NAMES.get(r['action'], r['action'])} "
-        f"{escape(r['details'][:60])}"
+        f"{'🤖 бот' if r['admin_id'] == 0 else escape(names.get(r['admin_id']) or str(r['admin_id']))}: "
+        f"{describe(ctx, r['action'], r['details'])}"
         for r in rows_db[:size]
     ]
     nav = []
