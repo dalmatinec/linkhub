@@ -99,11 +99,12 @@ async def show(
             log.debug("Редактирование не удалось (%s), отправляю заново", e.message)
 
     old_id = current.message_id if current is not None else await app.last_screen_id(user_id)
+    protect = bool(app.catalog.setting("protect_content", 1))  # запрет пересылки и сохранения
     msg: Message | None = None
     if media:
-        msg = await app.media.send(bot, chat_id, media.id, html, kb)
+        msg = await app.media.send(bot, chat_id, media.id, html, kb, protect_content=protect)
     if msg is None:
-        msg = await bot.send_message(chat_id, html, reply_markup=kb)
+        msg = await bot.send_message(chat_id, html, reply_markup=kb, protect_content=protect)
     app.set_screen(user_id, msg.message_id, media is not None and msg.content_type != "text")
     if old_id and old_id != msg.message_id:
         await safe_delete(app, chat_id, old_id)

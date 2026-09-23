@@ -273,10 +273,11 @@ async def run_broadcast(app: App, admin_id: int, from_chat: int, message_id: int
                         forward: bool = False) -> None:
     ok = blocked = failed = 0
     send = app.bot.forward_message if forward else app.bot.copy_message
+    protect = bool(app.catalog.setting("protect_content", 1))
     for uid in ids:
         while True:
             try:
-                await send(uid, from_chat, message_id)
+                await send(uid, from_chat, message_id, protect_content=protect)
                 ok += 1
             except TelegramRetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)

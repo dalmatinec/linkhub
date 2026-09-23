@@ -186,7 +186,13 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         await h.press(USER, "Gift Shop")
         card = h.screen(USER)
         assert "<b>Подарки</b>" in card.text
-        assert h.labels(USER) == [["💬 Написать"], ["Канал"], ["⭐ В избранное", "🚩 Пожаловаться"], ["◀️ Назад"]]
+        assert h.labels(USER) == [["💬 Написать"], ["Канал"], ["⭐ В избранное", "📤 Поделиться"],
+                                  ["🚩 Пожаловаться"], ["◀️ Назад"]]
+        share_url = h.find(USER, "Поделиться").url
+        assert share_url.startswith("https://t.me/share/url?url=") and f"start%3Dshop_{shop_id}" in share_url
+        from aiogram.methods import SendMessage
+        sent = [c for c in h.tg.calls if isinstance(c, SendMessage) and c.chat_id == USER]
+        assert sent and all(c.protect_content for c in sent), "пересылка сообщений бота запрещена"
         await h.press(USER, "Назад")
         assert h.labels(USER)[0] == ["Gift Shop"]
 

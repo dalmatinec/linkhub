@@ -16,6 +16,7 @@ Callback-данные (≤64 байт):
 """
 import json
 from html import escape
+from urllib.parse import quote
 
 from aiogram import F, Router
 from aiogram.filters import CommandObject, CommandStart
@@ -208,8 +209,14 @@ def screen_card(app: App, tr: Tr, shop: Shop, ctx: str, is_fav: bool = False):
     if shop.verified:
         html = tr.text("verified_badge") + "\n\n" + html
     kb = [[button(c.label, c.icon, c.style, url=c.url)] for c in shop.contacts]
-    kb.append([sys_button(tr, "fav_remove" if is_fav else "fav_add", f"f:{shop.id}:{ctx}"),
-               sys_button(tr, "report", f"r:{shop.id}:{ctx}")])
+    row = [sys_button(tr, "fav_remove" if is_fav else "fav_add", f"f:{shop.id}:{ctx}")]
+    if app.bot_username:  # делятся ссылкой на магазин в боте, а не пересылкой сообщения
+        link = f"https://t.me/{app.bot_username}?start=shop_{shop.id}"
+        share = tr.button("share")
+        row.append(button(share.label, share.icon, share.style,
+                          url=f"https://t.me/share/url?url={quote(link)}&text={quote(tr.label('shop', shop))}"))
+    kb.append(row)
+    kb.append([sys_button(tr, "report", f"r:{shop.id}:{ctx}")])
     kb.append([sys_button(tr, "back", ctx_to_cb(ctx))])
     return html, shop.media_id, markup(kb)
 

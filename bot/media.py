@@ -73,14 +73,15 @@ class MediaStore:
     # ---------- отправка ----------
     async def send(
         self, bot: Bot, chat_id: int, media_id: int, caption: str, markup: InlineKeyboardMarkup | None,
-        disable_notification: bool = False,
+        disable_notification: bool = False, protect_content: bool = False,
     ) -> Message | None:
         m = self.files.get(media_id)
         if m is None:
             return None
 
         async def call(src: str | FSInputFile) -> Message:
-            common = dict(caption=caption or None, reply_markup=markup, disable_notification=disable_notification)
+            common = dict(caption=caption or None, reply_markup=markup, disable_notification=disable_notification,
+                          protect_content=protect_content)
             if m.kind == "photo":
                 return await bot.send_photo(chat_id, photo=src, **common)
             if m.kind == "animation":

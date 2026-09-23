@@ -45,6 +45,8 @@ async def view_protection(ctx: Ctx) -> ViewResult:
     s = ctx.app.catalog.setting
     rows = settings_rows(ctx, PROTECTION, "prot")
     rows.append([b(f"🧹 Удалять сообщения пользователей: {'да' if s('clean_chat', 1) else 'нет'}", "x:settog:clean_chat:prot")])
+    rows.append([b(f"🔒 Запрет пересылки и сохранения: {'да' if s('protect_content', 1) else 'нет'}",
+                   "x:settog:protect_content:prot")])
     rows.append(back_btn("a:home"))
     html = ("🛡 <b>Защита</b>\n\n"
             f"Антифлуд: больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек — "
@@ -52,7 +54,9 @@ async def view_protection(ctx: Ctx) -> ViewResult:
             f"После <b>{s('flood_strikes')}</b> таких нарушений подряд — автобан на <b>{s('flood_ban_minutes')}</b> мин.\n"
             "Забаненные и флудеры отсекаются до основной логики и не нагружают бота.\n\n"
             "Удаление сообщений: всё, что пользователь пишет вне поиска и жалоб, удаляется — в чате остаётся "
-            "только экран бота.")
+            "только экран бота.\n\n"
+            "🔒 Запрет пересылки: сообщения бота нельзя переслать, сохранить или скопировать. Делиться магазином "
+            "можно кнопкой «📤 Поделиться» — она отправляет ссылку на магазин в боте.")
     return html, rows
 
 
