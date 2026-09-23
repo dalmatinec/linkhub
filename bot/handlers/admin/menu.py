@@ -23,7 +23,7 @@ KINDS = {
     "categories": "🗂 Категории (все города)",
     "search": "🔍 Поиск",
     "favorites": "⭐ Избранное",
-    "apply": "📝 Заявка «Разместить магазин»",
+    "apply": "📝 Заявка на размещение магазина",
     "language": "🌐 Выбор языка",
     "url": "🔗 Ссылка (канал, другой бот, сайт)",
 }
@@ -66,7 +66,7 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
         if item.kind == "url":
             lines.append(f"Ссылка: {escape(item.payload or '⚠️ не задана')}")
         if item.kind == "city_block":
-            lines.append("Показывает главные города ⭐ по 2 в ряд и кнопку «Другие города». "
+            lines.append("Показывает главные города ⭐ по 2 в ряд и кнопку 🌍 Другие города. "
                          "Какие города главные, настраивается в разделе 🏙 Города.")
         if item.kind not in NO_SCREEN:
             lines.append(f"Картинка: {media_line(app, item.media_id)}")

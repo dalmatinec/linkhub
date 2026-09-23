@@ -29,11 +29,12 @@
       "en"
     ],
     "city_categories_min": 6,
-    "card_show_cities": 1
+    "card_show_cities": 1,
+    "other_cities_as_shops": 1
   },
   "texts": {
     "cities": "🏙 <b>Выберите город</b>",
-    "other_cities": "🌍 <b>Другие города</b>",
+    "other_cities": "🌍 <b>Другие города</b>\nВыберите магазин, город указан в карточке:",
     "city_categories": "🏙 <b>{город}</b>\nЧто вас интересует?",
     "city_shops": "🏙 <b>{город}</b>\nВыберите магазин:",
     "city_category_shops": "🏙 <b>{город}</b>, {категория}\nВыберите магазин:",

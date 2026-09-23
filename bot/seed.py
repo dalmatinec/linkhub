@@ -9,6 +9,7 @@ from .db import Database
 
 SEED_PATH = Path(__file__).with_name("seed.json")
 LEGACY_PATH = Path(__file__).with_name("seed_legacy.json")  # прежние стандартные тексты
+TEXTS_REV = "texts_v3"  # поменяли стандартные тексты — увеличить номер, чтобы нетронутые обновились в базе
 
 
 async def apply_seed(db: Database) -> None:
@@ -58,7 +59,7 @@ async def apply_seed(db: Database) -> None:
     cities = [(name, 1, pos) for pos, name in enumerate(seed["cities"]["main"])]
     cities += [(name, 0, pos) for pos, name in enumerate(seed["cities"]["other"])]
     await db.executemany("INSERT INTO cities(label, is_main, position) VALUES (?, ?, ?)", cities)
-    for flag in ("seeded_at", "layout_v2", "texts_v2"):
+    for flag in ("seeded_at", "layout_v2", TEXTS_REV):
         await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (flag, str(int(time.time()))))
 
 
@@ -76,7 +77,7 @@ async def _insert_items(db: Database, parent_id: int, items: list[dict]) -> None
 
 async def refresh_default_texts(db: Database, seed: dict) -> None:
     """Один раз: стандартные тексты прошлых версий меняются на новые. Тексты, которые правил админ, не трогаем."""
-    if await db.fetchval("SELECT 1 FROM settings WHERE key = 'texts_v2'"):
+    if await db.fetchval("SELECT 1 FROM settings WHERE key = ?", (TEXTS_REV,)):
         return
     legacy = json.loads(LEGACY_PATH.read_text(encoding="utf-8"))
     for key, olds in legacy["texts"].items():
@@ -98,7 +99,7 @@ async def refresh_default_texts(db: Database, seed: dict) -> None:
     for old in legacy["root"]:
         await db.execute("UPDATE menu_items SET html = ? WHERE parent_id IS NULL AND html = ?",
                          (seed["menu"]["html"], old))
-    await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('texts_v2', ?)", (str(int(time.time())),))
+    await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (TEXTS_REV, str(int(time.time()))))
 
 
 async def upgrade_layout(db: Database) -> None:

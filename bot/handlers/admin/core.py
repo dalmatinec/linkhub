@@ -227,7 +227,7 @@ async def on_admin_input(message: Message, state: FSMContext, app: App, perms: s
     try:
         next_cb = await entry[1](ctx, message, *data.get("args", []))
     except (InputError, MediaError) as e:
-        html = f"⚠️ {escape(str(e))}\n\nПопробуйте ещё раз или нажмите «Отмена»."
+        html = f"⚠️ {escape(str(e))}\n\nПопробуйте ещё раз или нажмите ✖️ Отмена."
         await render(ctx, (html, [[button("✖️ Отмена", cb=data.get("back", "a:home"))]]), screen_id)
         return
     except Exception as e:
@@ -330,12 +330,12 @@ async def fetch_target(ctx: Ctx, kind: str, key: str):
 
 LABEL_HELP = (
     "Отправьте новый текст кнопки.\n"
-    "Первое <b>премиум-эмодзи</b> в сообщении станет иконкой кнопки — бот сам возьмёт его ID.\n"
+    "Первое <b>премиум-эмодзи</b> в сообщении станет иконкой кнопки, бот сам возьмёт его ID.\n"
     "Можно прислать только премиум-эмодзи, чтобы поменять одну иконку."
 )
 HTML_HELP = (
     "Отправьте новый текст. Форматирование, ссылки и <b>премиум-эмодзи</b> сохранятся как есть.\n"
-    "Можно прислать фото/GIF/видео с подписью — обновятся и медиа, и текст."
+    "Можно прислать фото, GIF или видео с подписью: обновятся и картинка, и текст."
 )
 MEDIA_HELP = "Пришлите фото, GIF или видео (можно файлом): JPG, PNG, WEBP, GIF, MP4."
 
@@ -438,7 +438,7 @@ async def in_media(ctx: Ctx, message: Message, kind: str, key: str):
     html, plain = message_html(message)
     current_plain = plain or html_to_plain(row["html"])
     if len(current_plain) > CAPTION_LIMIT:
-        raise InputError(f"Текст этого экрана длиннее {CAPTION_LIMIT} символов — с медиа Telegram его не покажет. "
+        raise InputError(f"Текст этого экрана длиннее {CAPTION_LIMIT} символов, с картинкой Telegram его не покажет. "
                          "Сначала сократите текст.")
     fields: dict[str, Any] = {"media_id": await _save_media(ctx, message)}
     if plain:
@@ -461,7 +461,7 @@ async def act_media_kind(ctx: Ctx, kind: str, key: str):
         new = "animation" if m.kind == "video" else "video"
         await ctx.app.media.set_kind(m.id, new)
         ctx.notice = ("✅ Теперь это GIF: воспроизводится сам, по кругу, без звука." if new == "animation"
-                      else "✅ Теперь это видео со звуком: запускается нажатием (или само — если так настроено "
+                      else "✅ Теперь это видео со звуком: запускается нажатием (или само, если так настроено "
                            "у пользователя в Telegram).")
     return TARGETS[kind][2].format(key)
 

@@ -7,7 +7,7 @@ ACTION_NAMES = {
     "shop.create": "создал магазин", "shop.delete": "удалил магазин", "shop.publish": "опубликовал магазин",
     "shop.hide": "скрыл магазин", "shop.tag_on": "поставил метку", "shop.tag_off": "снял метку",
     "shop.tag_expired": "срок метки истёк", "shop.tag_expiry": "изменил срок метки", "shop.contacts": "изменил контакты",
-    "shop.verified": "переключил «Проверенный»", "shop.categories": "изменил категории", "menu.create": "добавил кнопку меню", "menu.delete": "удалил кнопку меню",
+    "shop.verified": "переключил отметку Проверенный", "shop.categories": "изменил категории", "menu.create": "добавил кнопку меню", "menu.delete": "удалил кнопку меню",
     "menu.toggle": "скрыл/показал кнопку меню", "city.create": "добавил города", "city.delete": "удалил город",
     "tag.create": "создал метку", "tag.delete": "удалил метку", "user.ban": "забанил", "user.unban": "разбанил",
     "admin.add": "добавил админа", "admin.remove": "снял админа", "admin.perms": "изменил права админа",
@@ -44,4 +44,4 @@ def describe(app: App, action: str, details: str) -> str:
         "cat": lambda: cat.categories[int(key)].label if key.isdigit() and int(key) in cat.categories else f"#{key}",
         "field": lambda: next((f.label for f in cat.fields if str(f.id) == key), f"#{key}"),
     }.get(obj, lambda: details)()
-    return f"{what} — {OBJECT_NAMES.get(obj, obj)} «{escape(str(name)[:40])}»"
+    return f"{what}: {OBJECT_NAMES.get(obj, obj)} <b>{escape(str(name)[:40])}</b>"

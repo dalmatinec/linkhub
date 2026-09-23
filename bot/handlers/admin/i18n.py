@@ -36,24 +36,24 @@ def translatables(app: App) -> list[Item]:
             out.append(Item("text", key, "html", TEXT_NAMES[key], t.html))
     for key, btn in cat.buttons.items():
         if key in BUTTON_NAMES:
-            out.append(Item("btn", key, "label", f"Кнопка «{BUTTON_NAMES[key]}»", btn.label))
+            out.append(Item("btn", key, "label", f"Кнопка: {BUTTON_NAMES[key]}", btn.label))
     for item in cat.menu.values():
         is_root = item.id == cat.root_id
-        name = "Приветствие" if is_root else f"Меню «{item.label}»"
+        name = "Приветствие" if is_root else f"Меню: {item.label}"
         if not is_root:
             out.append(Item("item", str(item.id), "label", f"{name}: кнопка", item.label))
         if item.html:
             out.append(Item("item", str(item.id), "html", f"{name}: текст экрана", item.html))
-    out += [Item("city", str(c.id), "label", f"Город «{c.label}»", c.label) for c in cat.cities.values()]
-    out += [Item("tag", str(t.id), "label", f"Метка «{t.label}»", t.label) for t in cat.tags.values()]
-    out += [Item("cat", str(c.id), "label", f"Категория «{c.label}»", c.label) for c in cat.categories.values()]
+    out += [Item("city", str(c.id), "label", f"Город: {c.label}", c.label) for c in cat.cities.values()]
+    out += [Item("tag", str(t.id), "label", f"Метка: {t.label}", t.label) for t in cat.tags.values()]
+    out += [Item("cat", str(c.id), "label", f"Категория: {c.label}", c.label) for c in cat.categories.values()]
     for f in cat.fields:
-        out.append(Item("field", str(f.id), "label", f"Анкета «{f.label}»: название", f.label))
-        out.append(Item("field", str(f.id), "html", f"Анкета «{f.label}»: вопрос", f.html))
+        out.append(Item("field", str(f.id), "label", f"Анкета, {f.label}: название", f.label))
+        out.append(Item("field", str(f.id), "html", f"Анкета, {f.label}: вопрос", f.html))
     for s in cat.shops.values():
-        out.append(Item("shop", str(s.id), "label", f"Магазин «{s.label}»: кнопка", s.label))
+        out.append(Item("shop", str(s.id), "label", f"Магазин {s.label}: кнопка", s.label))
         if s.html:
-            out.append(Item("shop", str(s.id), "html", f"Магазин «{s.label}»: карточка", s.html))
+            out.append(Item("shop", str(s.id), "html", f"Магазин {s.label}: карточка", s.html))
     return out
 
 
@@ -79,8 +79,8 @@ async def view_languages(ctx: Ctx) -> ViewResult:
     enabled = cat.languages
     items = translatables(app)
     lines = ["🌐 <b>Языки и переводы</b>\n",
-             f"Основной язык: {names.get(cat.base_lang, cat.base_lang)} — всё, что вы пишете в админке.",
-             "Пользователь видит перевод, а если его нет — основной текст. Автоперевода нет: "
+             f"Основной язык: {names.get(cat.base_lang, cat.base_lang)}. На нём всё, что вы пишете в админке.",
+             "Пользователь видит перевод, а если его нет, то основной текст. Автоперевода нет: "
              "вы вписываете перевод сами (или отдаёте файл переводчику).\n"]
     rows: Rows = []
     for code, name in names.items():
@@ -91,7 +91,7 @@ async def view_languages(ctx: Ctx) -> ViewResult:
         lines.append(f"{name}: {'включён' if on else 'выключен'} · переведено {st.count('ok')} из {len(items)}"
                      + (f" · ⚠️ устарело {st.count('old')}" if st.count("old") else ""))
         rows.append([b(f"{'✅' if on else '▫️'} {name}", f"x:langtog:{code}")])
-    lines.append("\n⚠️ «Устарело» — вы поменяли русский текст после перевода. Перевод всё ещё показывается, "
+    lines.append("\n⚠️ Устарело значит, что вы поменяли русский текст после перевода. Перевод всё ещё показывается, "
                  "но его стоит обновить.")
     rows.append([b("📤 Файл: только новое и устаревшее", "x:trexp:todo")])
     rows.append([b("📤 Файл: все тексты", "x:trexp:all")])
@@ -130,9 +130,9 @@ async def view_translation(ctx: Ctx, kind: str, key: str) -> ViewResult:
     langs = other_langs(app)
     back = TARGETS[kind][2].format(key) if kind in TARGETS else "a:langs"
     if not langs:
-        return ("🌐 Других языков не включено. Включите их в разделе «🌐 Языки».",
+        return ("🌐 Других языков не включено. Включите их в разделе 🌐 Языки.",
                 [[b("🌐 Языки", "a:langs")], back_btn(back)])
-    icons = {"ok": "✅", "old": "⚠️", "none": "—"}
+    icons = {"ok": "✅", "old": "⚠️", "none": "▫️"}
     lines = ["🌐 <b>Перевод</b>\n"]
     rows: Rows = []
     for it in items:
@@ -146,7 +146,7 @@ async def view_translation(ctx: Ctx, kind: str, key: str) -> ViewResult:
                 r.append(b("✖️", f"x:trdel:{kind}:{key}:{it.field}:{code}"))
             rows.append(r)
         lines.append("")
-    lines.append("✅ — переведено, ⚠️ — русский текст поменялся после перевода, — — перевода нет "
+    lines.append("✅ переведено, ⚠️ русский текст поменялся после перевода, ▫️ перевода нет "
                  "(показывается русский).")
     rows.append(back_btn(back))
     return "\n".join(lines), rows
@@ -199,7 +199,7 @@ async def act_translation_delete(ctx: Ctx, kind: str, key: str, fld: str, lang: 
 
 # ---------- файл для переводчика ----------
 FILE_HEAD = """# Перевод текстов бота.
-# Впишите перевод после «kk:» и «en:» (можно в несколько строк). Строку «ru:» не меняйте — она для сверки.
+# Впишите перевод после kk: и en: (можно в несколько строк). Строку ru: не меняйте, она для сверки.
 # Теги <b>…</b>, <i>…</i>, <a href="…">…</a>, <tg-emoji …>…</tg-emoji> оставляйте как есть:
 # это жирный шрифт, ссылки и премиум-эмодзи. Слова в фигурных скобках {город}, {имя} не переводите.
 # Пустую строку перевода бот пропустит.
@@ -219,7 +219,7 @@ def build_export(app: App, only_todo: bool) -> tuple[str, int]:
         lines = [f"=== {it.kind}/{it.ref}/{it.field} | {it.title} ===", f"{base}: {it.base}"]
         for code in langs:
             found = app.catalog.translations.get((it.kind, it.ref, it.field, code))
-            mark = "  # ⚠️ русский текст изменился — проверьте" if states[code] == "old" else ""
+            mark = "  # ⚠️ русский текст изменился, проверьте" if states[code] == "old" else ""
             lines.append(f"{code}: {found[0] if found else ''}{mark}")
         blocks.append("\n".join(lines))
     return "\n\n".join(blocks) + "\n", count
@@ -233,11 +233,11 @@ async def act_translation_export(ctx: Ctx, mode: str):
         return "a:langs"
     text, count = build_export(app, only_todo=mode == "todo")
     if count == 0:
-        ctx.notice = "✅ Всё переведено — выгружать нечего."
+        ctx.notice = "✅ Всё переведено, выгружать нечего."
         return "a:langs"
     await app.bot.send_document(
         ctx.chat_id, BufferedInputFile(text.encode("utf-8"), filename=f"translations_{mode}.txt"),
-        caption=f"🌐 Текстов в файле: {count}. Переведите и загрузите обратно кнопкой «📥 Загрузить».")
+        caption=f"🌐 Текстов в файле: {count}. Переведите и загрузите обратно кнопкой 📥 Загрузить.")
     await ctx.toast("Файл отправлен ниже")
     return None
 
@@ -255,7 +255,7 @@ def parse_import(text: str, codes: list[str]) -> dict[tuple[str, str, str, str],
 
     def flush() -> None:
         if current and lang:
-            value = re.sub(r"\s*# ⚠️ русский текст изменился — проверьте\s*$", "", "\n".join(buf)).strip()
+            value = re.sub(r"\s*# ⚠️ русский текст изменился.*$", "", "\n".join(buf)).strip()
             if value:
                 result[(*current, lang)] = value
 

@@ -155,12 +155,12 @@ class MediaStore:
         kind, file_id, size, ext, reusable = _detect(message)
         limit = min(max_bytes, TELEGRAM_DOWNLOAD_LIMIT)
         if size and size > limit:
-            raise MediaError(f"Файл весит {size / 1048576:.1f} МБ, лимит — {limit / 1048576:.0f} МБ.")
+            raise MediaError(f"Файл весит {size / 1048576:.1f} МБ, а можно не больше {limit / 1048576:.0f} МБ.")
         buf = await bot.download(file_id)
         assert buf is not None
         data = buf.getvalue()
         if len(data) > limit:
-            raise MediaError(f"Файл весит {len(data) / 1048576:.1f} МБ, лимит — {limit / 1048576:.0f} МБ.")
+            raise MediaError(f"Файл весит {len(data) / 1048576:.1f} МБ, а можно не больше {limit / 1048576:.0f} МБ.")
         sha = hashlib.sha256(data).hexdigest()
 
         existing = await self.db.fetchone("SELECT id FROM media WHERE sha256 = ?", (sha,))

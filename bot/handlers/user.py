@@ -147,6 +147,11 @@ def screen_cities(app: App, tr: Tr, item: MenuItem, user_id: int = 0):
 
 def screen_other_cities(app: App, tr: Tr, item_id: int, page: int):
     cat = app.catalog
+    if cat.setting("other_cities_as_shops", 1):
+        # сразу магазины из всех не главных городов, город написан в карточке
+        html, kb = shop_list(app, tr, cat.other_shops, page, tr.text("other_cities"), f"o{item_id}.",
+                             f"o:{item_id}:", f"m:{item_id}")
+        return html, cat.text("other_cities").media_id, markup(kb)
     chunk, page, pages = paginate(cat.other_cities, page, int(cat.setting("page_size", 10)))
     btns = [button(tr.label("city", c), c.icon, c.style, cb=f"y:{c.id}:{item_id}:0") for c in chunk]
     kb = grid(btns, int(cat.setting("per_row", 2)))

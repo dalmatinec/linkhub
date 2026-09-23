@@ -16,9 +16,9 @@ from .shops import fmt_date
 
 # ключ -> (название, минимум, максимум)
 PROTECTION = {
-    "flood_limit": ("Действий за окно (0 — выкл.)", 0, 100),
+    "flood_limit": ("Действий за окно (0 выключает)", 0, 100),
     "flood_window": ("Окно антифлуда, сек", 1, 60),
-    "flood_strikes": ("Нарушений до автобана (0 — без бана)", 0, 100),
+    "flood_strikes": ("Нарушений до автобана (0 без бана)", 0, 100),
     "flood_ban_minutes": ("Автобан, минут", 0, 100000),
     "report_cooldown_minutes": ("Пауза между жалобами, минут", 0, 10000),
     "apply_cooldown_hours": ("Пауза между заявками, часов", 0, 10000),
@@ -49,15 +49,15 @@ async def view_protection(ctx: Ctx) -> ViewResult:
                    "x:settog:protect_content:prot")])
     rows.append(back_btn("a:home"))
     html = ("🛡 <b>Защита</b>\n\n"
-            f"Антифлуд: больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек — "
-            "бот отвечает «слишком быстро».\n"
-            f"После <b>{s('flood_strikes')}</b> таких нарушений подряд — автобан на <b>{s('flood_ban_minutes')}</b> мин.\n"
+            f"Антифлуд: если больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек, "
+            "бот просит не торопиться.\n"
+            f"После <b>{s('flood_strikes')}</b> таких нарушений подряд автобан на <b>{s('flood_ban_minutes')}</b> мин.\n"
             "Забаненные и флудеры отсекаются до основной логики и не нагружают бота.\n\n"
-            "Удаление сообщений: всё, что пользователь пишет вне поиска и жалоб, удаляется — в чате остаётся "
+            "Удаление сообщений: всё, что пользователь пишет вне поиска и жалоб, удаляется, и в чате остаётся "
             "только экран бота.\n\n"
             "🔒 Запрет пересылки: покупатели не могут переслать, сохранить или сфотографировать экран бота. "
             "На админов и модераторов запрет не действует, скриншоты можно делать всегда. Делиться магазином "
-            "можно кнопкой «📤 Поделиться», она отправляет ссылку на магазин в боте.")
+            "можно кнопкой 📤 Поделиться, она отправляет ссылку на магазин в боте.")
     return html, rows
 
 
@@ -75,11 +75,11 @@ async def view_settings(ctx: Ctx) -> ViewResult:
     rows.append(back_btn("a:home"))
     total = sum(m.size for m in app.media.files.values()) / 1048576
     html = ("⚙️ <b>Настройки</b>\n\n"
-            "📡 <b>Канал логов</b> — один приватный канал, куда бот шлёт ошибки, бэкапы, новые заявки, жалобы, "
-            "автобаны и действия админов. Пока не задан — бэкапы приходят владельцам в личку.\n\n"
+            "📡 <b>Канал логов</b>: один приватный канал, куда бот шлёт ошибки, бэкапы, новые заявки, жалобы, "
+            "автобаны и действия админов. Пока он не задан, бэкапы приходят владельцам в личку.\n\n"
             f"Медиафайлов: <b>{len(app.media.files)}</b> ({total:.1f} МБ)\n"
-            "«Прогреть» — заранее загрузить все медиа в Telegram (нужно после смены токена; "
-            "делается и автоматически при запуске).")
+            "Прогрев заранее загружает все медиа в Telegram. Это нужно после смены токена, "
+            "но при запуске бот делает это и сам.")
     return html, rows
 
 
@@ -120,7 +120,7 @@ async def act_log_chat(ctx: Ctx):
         "📡 <b>Подключение канала логов</b>\n\n"
         "1. Создайте приватный канал.\n"
         "2. Добавьте этого бота в канал администратором (с правом публиковать сообщения).\n"
-        "3. Перешлите сюда любое сообщение из канала — или отправьте его ID (вида -100…).\n\n"
+        "3. Перешлите сюда любое сообщение из канала или отправьте его ID, он начинается с -100.\n\n"
         "Отправьте <code>0</code>, чтобы отключить канал.",
         "a:set",
     )
@@ -180,7 +180,7 @@ async def view_stats(ctx: Ctx) -> ViewResult:
         "SELECT shop_id, COUNT(*) AS n FROM events WHERE ts > ? GROUP BY shop_id ORDER BY n DESC LIMIT 10",
         (t - 30 * 86400,))
     top_lines = "\n".join(
-        f"{i}. {escape(cat.shops[r['shop_id']].label) if r['shop_id'] in cat.shops else '#' + str(r['shop_id'])} — {r['n']}"
+        f"{i}. {escape(cat.shops[r['shop_id']].label) if r['shop_id'] in cat.shops else '#' + str(r['shop_id'])}: {r['n']}"
         for i, r in enumerate(top, 1)) or "пока нет данных"
     tags = "\n".join(f"• {escape(tg.label)}: {len(cat.by_tag.get(tg.id, []))}" for tg in cat.tags.values())
     html = (
@@ -201,10 +201,10 @@ async def view_backup(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
     html = ("💾 <b>Бэкап</b>\n\n"
             "Архив = база (все тексты, кнопки, магазины, пользователи) + все медиафайлы.\n"
-            f"Автоматически — каждый день в {cat.setting('backup_hour')}:00 "
-            f"(UTC+{cat.setting('tz_offset')}), последний: {cat.setting('last_backup_day', '—')}.\n"
+            f"Автоматически каждый день в {cat.setting('backup_hour')}:00 "
+            f"(UTC+{cat.setting('tz_offset')}). Последний: {cat.setting('last_backup_day', 'ещё не было')}.\n"
             f"Куда: {'в канал логов' if ctx.app.log_chat else 'владельцам в личку (подключите канал в ⚙️ Настройках)'}.\n\n"
-            "<b>Переезд на новый токен:</b> меняете BOT_TOKEN в .env и перезапускаете — всё на месте, медиа "
+            "<b>Переезд на новый токен:</b> меняете BOT_TOKEN в .env и перезапускаете. Всё остаётся на месте, медиа "
             "перезальются сами.\n"
             "<b>Переезд на новый сервер:</b> копируете папку data целиком, либо восстанавливаете из архива.")
     rows = [[b("💾 Сделать бэкап сейчас", "x:bakgo", "success")],
@@ -227,8 +227,8 @@ async def act_backup_restore(ctx: Ctx):
     return await ctx.ask(
         "bakrest",
         "⚠️ Текущие данные будут <b>заменены</b> данными из архива (копия текущей базы сохранится на сервере).\n\n"
-        f"Пришлите zip-архив бэкапа файлом (до {TELEGRAM_DOWNLOAD_LIMIT // 1048576} МБ — лимит Telegram).\n"
-        "Архив больше — восстановите на сервере: <code>python -m bot.restore архив.zip</code>",
+        f"Пришлите zip-архив бэкапа файлом, до {TELEGRAM_DOWNLOAD_LIMIT // 1048576} МБ (лимит Telegram).\n"
+        "Если архив больше, восстановите его на сервере: <code>python -m bot.restore архив.zip</code>",
         "a:bak",
     )
 
@@ -239,7 +239,7 @@ async def in_backup_restore(ctx: Ctx, message: Message):
     if doc is None or not (doc.file_name or "").endswith(".zip"):
         raise InputError("Нужен zip-файл бэкапа.")
     if (doc.file_size or 0) > TELEGRAM_DOWNLOAD_LIMIT:
-        raise InputError("Архив больше 20 МБ — восстановите на сервере командой python -m bot.restore.")
+        raise InputError("Архив больше 20 МБ. Восстановите его на сервере командой python -m bot.restore.")
     with tempfile.TemporaryDirectory() as tmp:
         path = Path(tmp) / "restore.zip"
         await ctx.app.bot.download(doc.file_id, destination=path)

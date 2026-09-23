@@ -45,9 +45,9 @@ async def view_applications(ctx: Ctx, status: str = "new", page: str = "0") -> V
     rows.append([b(("• " if s == status else "") + t, f"a:appls:{s}:0") for s, t in STATUS.items()])
     rows.append([b("⚙️ Вопросы анкеты", "a:flds")])
     rows.append(back_btn("a:home"))
-    html = (f"📝 <b>Заявки</b> — {STATUS[status]}: {len(rows_db)}\n\n"
-            "Люди заполняют анкету кнопкой меню «Разместить магазин». Из заявки одной кнопкой "
-            "создаётся черновик карточки — останется проверить и опубликовать.")
+    html = (f"📝 <b>Заявки</b>, {STATUS[status]}: {len(rows_db)}\n\n"
+            "Люди заполняют анкету через кнопку меню 📝 Разместить магазин. Из заявки одной кнопкой "
+            "создаётся черновик карточки, останется проверить его и опубликовать.")
     return html, rows
 
 
@@ -64,7 +64,7 @@ async def view_application(ctx: Ctx, app_id: str) -> ViewResult:
     tz = int(app.catalog.setting("tz_offset", 5))
     answers = json.loads(r["answers"])
     parts = [
-        f"📝 <b>Заявка #{r['id']}</b> — {STATUS.get(r['status'], r['status'])}",
+        f"📝 <b>Заявка #{r['id']}</b>, {STATUS.get(r['status'], r['status'])}",
         f"От: {who} <a href=\"tg://user?id={r['user_id']}\">написать</a> (<code>{r['user_id']}</code>)",
         f"Когда: {fmt_date(r['created_at'], tz)}",
     ]
@@ -76,7 +76,7 @@ async def view_application(ctx: Ctx, app_id: str) -> ViewResult:
             value = escape(a["plain"][:600]) + "…"
         if a["media_id"]:
             value = ("📎 медиа\n" + value).strip()
-        parts.append(f"\n<b>{escape(a['label'])}</b>\n{value or '—'}")
+        parts.append(f"\n<b>{escape(a['label'])}</b>\n{value or '<i>пропущено</i>'}")
     rows: Rows = []
     if any(a["media_id"] for a in answers):
         rows.append([b("👀 Показать медиа", f"x:aplmed:{r['id']}")])
@@ -146,7 +146,7 @@ async def act_application_accept(ctx: Ctx, app_id: str):
         or next((a["media_id"] for a in answers if a["media_id"]), None)
     note = ""
     if len(plain) > 1024 and media_id:
-        note = "\n⚠️ Текст длиннее 1024 символов — медиа не прикреплено, сократите текст и добавьте фото."
+        note = "\n⚠️ Текст длиннее 1024 символов, поэтому картинка не прикреплена. Сократите текст и добавьте фото."
         media_id = None
 
     ts = now()
@@ -188,15 +188,15 @@ async def _notify_author(ctx: Ctx, user_id: int, text_key: str, **values) -> boo
 
 @action("aplno", P)
 async def act_application_reject(ctx: Ctx, app_id: str):
-    return await ctx.ask("aplno", "Напишите причину отказа — её получит автор заявки.\n"
-                                  "Отправьте «-», чтобы отклонить без причины.", f"a:appl:{app_id}", app_id)
+    return await ctx.ask("aplno", "Напишите причину отказа, её получит автор заявки.\n"
+                                  "Чтобы отклонить без причины, отправьте знак минус: -", f"a:appl:{app_id}", app_id)
 
 
 @on_input("aplno", P)
 async def in_application_reject(ctx: Ctx, message: Message, app_id: str):
     reason = (message.text or "").strip()
     if not reason:
-        raise InputError("Нужен текст (или «-»).")
+        raise InputError("Нужен текст или знак минус.")
     reason = "" if reason == "-" else reason[:1000]
     r = await ctx.app.db.fetchone("SELECT user_id FROM applications WHERE id = ?", (int(app_id),))
     await ctx.app.db.execute(
@@ -211,7 +211,7 @@ async def in_application_reject(ctx: Ctx, message: Message, app_id: str):
 
 @action("aplmsg", P)
 async def act_application_message(ctx: Ctx, app_id: str):
-    return await ctx.ask("aplmsg", "Напишите сообщение автору заявки — бот перешлёт его от своего имени.",
+    return await ctx.ask("aplmsg", "Напишите сообщение автору заявки. Бот отправит его от своего имени.",
                          f"a:appl:{app_id}", app_id)
 
 
@@ -224,7 +224,7 @@ async def in_application_message(ctx: Ctx, message: Message, app_id: str):
         return "a:appls:new:0"
     ok = await _notify_author(ctx, r["user_id"], "moderator_message", text=message.text[:3000])
     await ctx.log("appl.reply", f"#{app_id}")
-    ctx.notice = "✅ Сообщение отправлено." if ok else "⚠️ Не доставлено — пользователь заблокировал бота."
+    ctx.notice = "✅ Сообщение отправлено." if ok else "⚠️ Не доставлено: пользователь заблокировал бота."
     return f"a:appl:{app_id}"
 
 
@@ -236,15 +236,15 @@ async def view_fields(ctx: Ctx) -> ViewResult:
                   for i, f in enumerate(cat.fields, 1)]
     rows.append([b("➕ Добавить вопрос", "x:fldnew", "success")])
     rows.append(back_btn("a:appls:new:0"))
-    html = ("⚙️ <b>Вопросы анкеты «Разместить магазин»</b>\n\n"
-            "Бот задаёт их по порядку. У каждого вопроса есть «роль» — куда ответ попадёт, "
+    html = ("⚙️ <b>Вопросы анкеты для размещения магазина</b>\n\n"
+            "Бот задаёт их по порядку. У каждого вопроса есть роль: куда попадёт ответ, "
             "когда вы создадите магазин из заявки (название, текст карточки, контакты…).")
     return html, rows
 
 
 @action("fldnew", P)
 async def act_field_new(ctx: Ctx):
-    return await ctx.ask("fldnew", "Отправьте короткое название вопроса (например, «Скрин оплаты»). "
+    return await ctx.ask("fldnew", "Отправьте короткое название вопроса, например: Скрин оплаты. "
                                    "Сам текст вопроса настроите следующим шагом.", "a:flds")
 
 
@@ -260,7 +260,7 @@ async def in_field_new(ctx: Ctx, message: Message):
         (label, escape(label), pos))
     await ctx.reload()
     await ctx.log("field.create", label)
-    ctx.notice = "✅ Вопрос добавлен. Нажмите «📝 Текст вопроса», чтобы написать, что спросить."
+    ctx.notice = "✅ Вопрос добавлен. Нажмите 📝 Текст вопроса и напишите, что спросить."
     return f"a:fld:{field_id}"
 
 

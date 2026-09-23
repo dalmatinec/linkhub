@@ -132,6 +132,12 @@ def test_user_navigation(tmp_path):
 
         await h.press(USER, "Другие города")
         assert h.screen(USER).id == scr.id, "экран редактируется, а не шлётся заново"
+        assert "нет магазинов" in h.screen(USER).text, "по умолчанию сразу список магазинов"
+        # режим «сначала список городов»
+        await h.app.db.execute("UPDATE settings SET value = '0' WHERE key = 'other_cities_as_shops'")
+        await h.app.catalog.reload()
+        await h.press(USER, "Назад")
+        await h.press(USER, "Другие города")
         labels = h.labels(USER)
         assert all(len(r) == 2 for r in labels[:5]) and labels[5] == ["1/2", "▶️"] and labels[6] == ["◀️ Назад"]
         await h.press(USER, "▶️")
@@ -350,7 +356,7 @@ def test_tag_expiry_and_backup_restore(tmp_path):
         await h.app.db.execute("UPDATE shop_tags SET expires_at = ? WHERE shop_id = ?", (now() - 1, shop_id))
         await check_tag_expiry(h.app)
         assert h.app.catalog.shops[shop_id].tags == {}
-        assert any("срок истёк" in (m.text or "") for m in h.tg.chat(OWNER))
+        assert any("срок истёк" in (m.text or "").lower() for m in h.tg.chat(OWNER))
 
         path = await make_backup(h.app)
         await h.app.db.execute("DELETE FROM shops")
@@ -474,7 +480,9 @@ def test_languages_and_translation_file(tmp_path):
         await h.click(OWNER, "x:trexp:todo")
         exported = h.tg.documents[-1].decode()
         assert "=== text/other_cities/html" in exported and "kk: \n" in exported
-        filled = exported.replace("ru: 🌍 <b>Другие города</b>\nkk: ", "ru: 🌍 <b>Другие города</b>\nkk: 🌍 <b>Басқа қалалар</b>")
+        other = "ru: 🌍 <b>Другие города</b>\nВыберите магазин, город указан в карточке:\nkk: "
+        assert other in exported
+        filled = exported.replace(other, other + "🌍 <b>Басқа қалалар</b>")
         filled = filled.replace("ru: Здесь пока нет магазинов. Загляните позже.\nkk: ",
                                 "ru: Здесь пока нет магазинов. Загляните позже.\nkk: <b>Бос")  # битый HTML
         h.tg.download_data = filled.encode()
@@ -673,7 +681,7 @@ def test_existing_install_gets_new_layout_and_texts(tmp_path):
         await db.execute("UPDATE texts SET html = 'Здесь пока пусто.' WHERE key = 'empty'")
         await db.execute("UPDATE texts SET html = 'Мой текст — с тире' WHERE key = 'flood'")
         await db.execute("UPDATE menu_items SET html = 'Моё приветствие про Cruise' WHERE id = ?", (root,))
-        await db.execute("DELETE FROM settings WHERE key IN ('layout_v2', 'texts_v2')")
+        await db.execute("DELETE FROM settings WHERE key IN ('layout_v2', 'texts_v3')")
         await h.stop()
 
         h2 = await Harness(tmp_path).start()
@@ -685,4 +693,24 @@ def test_existing_install_gets_new_layout_and_texts(tmp_path):
         assert h2.labels(USER)[1] == ["Алматы", "Астана"] and h2.labels(USER)[-1] == ["☰ Ещё"]
         await h2.press(USER, "Ещё")
         assert h2.labels(USER)[:2] == [["📝 Разместить магазин"], ["🌐 Язык"]]
+    run(scenario())
+
+
+def test_other_cities_list_shops(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)  # Алматы
+        await h.click(OWNER, f"x:scnew:{shop_id}")
+        await h.send(OWNER, "Экибастуз\nКараганда")
+        cat = h.app.catalog
+        names = {cat.cities[c].label for c in cat.shops[shop_id].cities}
+        assert names == {"Алматы", "Экибастуз", "Караганда"}, "новый город создан, существующий найден"
+        assert sum(1 for c in cat.cities.values() if c.label == "Караганда") == 1
+        await h.send(USER, "/start")
+        await h.press(USER, "Другие города")
+        assert h.labels(USER)[0] == ["Gift Shop"]
+        await h.press(USER, "Gift Shop")
+        assert "Алматы" in h.screen(USER).text and "Экибастуз" in h.screen(USER).text
+        await h.press(USER, "Назад")
+        assert h.labels(USER)[0] == ["Gift Shop"], "назад из карточки в Другие города"
     run(scenario())

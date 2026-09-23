@@ -48,7 +48,7 @@ async def in_user_find(ctx: Ctx, message: Message):
     if origin is not None:
         sender = getattr(origin, "sender_user", None)
         if sender is None:
-            raise InputError("Пользователь скрыл пересылку — пришлите его ID.")
+            raise InputError("Пользователь скрыл пересылку в настройках, пришлите его ID.")
         uid = sender.id
     text = (message.text or "").strip()
     if uid is None and text.lstrip("-").isdigit():
@@ -67,14 +67,14 @@ async def view_user(ctx: Ctx, user_id: str) -> ViewResult:
     row = await app.db.fetchone("SELECT * FROM users WHERE id = ?", (uid,))
     tz = int(app.catalog.setting("tz_offset", 5))
     if row is None:
-        html = f"👤 <code>{uid}</code>\nВ базе нет — бот его ещё не видел."
+        html = f"👤 <code>{uid}</code>\nВ базе нет, бот его ещё не видел."
     else:
         ban = "нет"
         if row["is_banned"]:
             ban = "навсегда" if row["banned_until"] is None else f"до {fmt_date(row['banned_until'], tz)}"
             if row["ban_reason"]:
                 ban += f" ({escape(row['ban_reason'])})"
-        html = (f"👤 <b>{escape(row['first_name'] or '—')}</b> "
+        html = (f"👤 <b>{escape(row['first_name'] or 'без имени')}</b> "
                 f"{'@' + escape(row['username']) if row['username'] else ''}\n"
                 f"ID: <code>{uid}</code>\n"
                 f"Первый вход: {fmt_date(row['created_at'], tz)}\n"
@@ -83,7 +83,7 @@ async def view_user(ctx: Ctx, user_id: str) -> ViewResult:
                 f"Заблокировал бота: {'да' if row['is_blocked'] else 'нет'}")
     rows: Rows = []
     if uid in app.config.owner_ids:
-        html += "\n\n👑 Владелец — забанить нельзя."
+        html += "\n\n👑 Это владелец, его нельзя забанить."
     elif app.is_banned(uid):
         rows.append([b("✅ Разбанить", f"x:unban:{uid}", "success")])
     else:
@@ -98,7 +98,7 @@ async def view_user(ctx: Ctx, user_id: str) -> ViewResult:
 async def act_ban(ctx: Ctx, user_id: str, minutes: str):
     uid = int(user_id)
     if uid in ctx.app.config.owner_ids or ctx.app.perms(uid) is not None:
-        ctx.notice = "⛔️ Админа забанить нельзя — сначала снимите права."
+        ctx.notice = "⛔️ Админа нельзя забанить. Сначала снимите с него права."
         return f"a:user:{uid}"
     until = None if minutes == "0" else now() + int(minutes) * 60
     await ctx.app.ban(uid, until, f"админ {ctx.user_id}")
@@ -128,7 +128,7 @@ async def view_banned(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("▶️", f"a:banned:{p + 1}"))
     rows.append(nav)
     rows.append(back_btn("a:users"))
-    return f"🚫 <b>Забаненные</b> — {len(rows_db)}", rows
+    return f"🚫 <b>Забаненные</b>: {len(rows_db)}", rows
 
 
 # ---------- админы ----------
@@ -142,7 +142,7 @@ async def view_admins(ctx: Ctx) -> ViewResult:
         rows.append([b(f"👮 {names.get(uid) or uid} · прав: {len(perms)}", f"a:adm:{uid}")])
     rows.append([b("➕ Добавить админа", "x:adnew", "success")])
     rows.append(back_btn("a:home"))
-    html = ("👮 <b>Админы</b>\n\n👑 — владельцы из .env, у них все права.\n"
+    html = ("👮 <b>Админы</b>\n\n👑 Владельцы из .env, у них все права.\n"
             "Остальным права выдаются галочками по разделам.")
     return html, rows
 
@@ -166,7 +166,7 @@ async def in_admin_new(ctx: Ctx, message: Message):
                              (uid, ctx.user_id, now()))
     await ctx.reload()
     await ctx.log("admin.add", str(uid))
-    ctx.notice = "✅ Админ добавлен с правом «Магазины». Отметьте нужные разделы."
+    ctx.notice = "✅ Админ добавлен с доступом к магазинам. Отметьте, какие ещё разделы ему открыть."
     return f"a:adm:{uid}"
 
 
@@ -217,7 +217,7 @@ async def view_broadcast(ctx: Ctx) -> ViewResult:
 
 @action("bcnew", "broadcast")
 async def act_broadcast_new(ctx: Ctx):
-    return await ctx.ask("bcnew", "Отправьте сообщение для рассылки — ровно так оно и уйдёт пользователям.", "a:bc",
+    return await ctx.ask("bcnew", "Отправьте сообщение для рассылки. Пользователи получат его ровно в таком виде.", "a:bc",
                          keep_message=True)
 
 
@@ -244,8 +244,8 @@ async def view_broadcast_confirm(ctx: Ctx, message_id: str, mode: str, lang: str
     langs = {"all": "👥 Всем", **app.catalog.languages}
     html = (f"☝️ Сообщение выше получат <b>{count}</b> пользователей.\n\n"
             f"Способ: <b>{MODES[mode]}</b>\n"
-            "• Копией — придёт как сообщение бота, без подписи «Переслано».\n"
-            "• Пересылкой — с подписью «Переслано от …». Удобно, если вы переслали боту пост своего канала: "
+            "• Копией: придёт как сообщение бота, без подписи о пересылке.\n"
+            "• Пересылкой: с подписью о пересылке от автора. Удобно, если вы переслали боту пост своего канала: "
             "у людей будет видно канал и на него можно нажать.\n\n"
             f"Кому: <b>{langs.get(lang, lang)}</b>")
     rows: Rows = [
@@ -315,7 +315,7 @@ async def view_reports(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("▶️", f"a:reps:{p + 1}"))
     rows.append(nav)
     rows.append(back_btn("a:home"))
-    return f"🚩 <b>Открытые жалобы</b> — {len(rows_db)}", rows
+    return f"🚩 <b>Открытые жалобы</b>: {len(rows_db)}", rows
 
 
 @view("rep", "reports")
@@ -326,7 +326,7 @@ async def view_report(ctx: Ctx, report_id: str) -> ViewResult:
         return await view_reports(ctx)
     tz = int(ctx.app.catalog.setting("tz_offset", 5))
     html = (f"🚩 <b>Жалоба #{r['id']}</b> ({'открыта' if r['status'] == 'open' else 'решена'})\n"
-            f"Магазин: {escape(r['label'] or '—')}\n"
+            f"Магазин: {escape(r['label'] or 'удалён')}\n"
             f"От: <code>{r['user_id']}</code>\n"
             f"Когда: {fmt_date(r['created_at'], tz)}\n\n{escape(r['text'])}")
     rows: Rows = []

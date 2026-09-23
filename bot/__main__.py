@@ -39,13 +39,13 @@ async def setup(config: Config, bot: Bot) -> tuple[App, Dispatcher, GuardMiddlew
 
     async def on_missing(media_id: int) -> None:
         await app.notify_admins(
-            f"⚠️ Медиафайл #{media_id} не найден на диске — экран показан без него. Загрузите медиа заново.",
+            f"⚠️ Медиафайл #{media_id} не найден на диске, экран показан без него. Загрузите медиа заново.",
             perm="settings",
         )
     media.on_missing = on_missing
 
     if catalog.setting("last_bot_id", 0) != me.id:
-        log.info("Запущен бот @%s (id %s) — отличается от прошлого, медиа будут перезалиты", me.username, me.id)
+        log.info("Запущен бот @%s (id %s), он отличается от прошлого: медиа будут перезалиты", me.username, me.id)
         await db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_bot_id', ?)", (str(me.id),))
         await catalog.reload()
 

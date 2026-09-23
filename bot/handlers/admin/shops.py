@@ -49,7 +49,7 @@ async def view_shops(ctx: Ctx, page: str = "0") -> ViewResult:
     show_cities = ctx.app.catalog.setting("card_show_cities", 1)
     rows.append([b(f"🏙 Города в карточке: {'показывать' if show_cities else 'не показывать'}", "x:cardcity")])
     rows.append(back_btn("a:home"))
-    html = f"🏪 <b>Магазины</b> — {len(shops)}\n🙈 — скрытые (не видны пользователям)"
+    html = f"🏪 <b>Магазины</b>: {len(shops)}\n🙈 значит скрыт, пользователи его не видят"
     return html, rows
 
 
@@ -65,7 +65,7 @@ async def act_card_cities_toggle(ctx: Ctx):
 async def act_shop_new(ctx: Ctx):
     return await ctx.ask(
         "shopnew",
-        "Отправьте <b>название магазина</b> — это текст его кнопки в списке.\n"
+        "Отправьте <b>название магазина</b>. Это будет текст его кнопки в списке.\n"
         "Премиум-эмодзи в начале станет иконкой кнопки.",
         "a:shops:0",
     )
@@ -88,7 +88,7 @@ async def in_shop_new(ctx: Ctx, message: Message):
     await ctx.reload()
     await ctx.log("shop.create", f"{shop_id}: {label}")
     ctx.notice = ("✅ Магазин создан <b>скрытым</b>. Заполните карточку, выберите метки и города, "
-                  "затем нажмите «👁 Опубликовать».")
+                  "затем нажмите 👁 Опубликовать.")
     return f"a:shop:{shop_id}"
 
 
@@ -105,7 +105,7 @@ async def in_shop_find(ctx: Ctx, message: Message) -> ViewResult:
     found = [s for s in sorted_shops(ctx) if q in s.search_key][:40]
     rows = grid([b(shop_title(s), f"a:shop:{s.id}") for s in found], 2)
     rows.append(back_btn("a:shops:0"))
-    return f"🔍 Найдено: {len(found)} по «{escape(q)}»", rows
+    return f"🔍 По запросу <b>{escape(q)}</b> найдено: {len(found)}", rows
 
 
 @view("shop", P)
@@ -125,7 +125,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         "SELECT COUNT(*) FROM events WHERE shop_id = ? AND ts > ?", (shop.id, now() - 7 * 86400))
     month = await app.db.fetchval(
         "SELECT COUNT(*) FROM events WHERE shop_id = ? AND ts > ?", (shop.id, now() - 30 * 86400))
-    link = f"https://t.me/{app.bot_username}?start=shop_{shop.id}" if app.bot_username else "—"
+    link = f"https://t.me/{app.bot_username}?start=shop_{shop.id}" if app.bot_username else "появится после запуска"
     html = (
         f"🏪 <b>{escape(shop.label)}</b>  <code>#{shop.id}</code>\n"
         f"Статус: {'✅ опубликован' if shop.is_active else '🙈 скрыт'}\n"
@@ -136,7 +136,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         f"Категории: {escape(categories)}\n"
         f"Контактов: {len(shop.contacts)}\n"
         f"Медиа: {media_line(app, shop.media_id)}\n"
-        f"Просмотры: 7 дн — <b>{week}</b>, 30 дн — <b>{month}</b>\n"
+        f"Просмотры: за 7 дней <b>{week}</b>, за 30 дней <b>{month}</b>\n"
         f"Ссылка: {escape(link)}\n\n"
         f"<b>Текст карточки:</b>\n{snippet(shop.html, 400)}"
     )
@@ -146,7 +146,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
                  b("🗂 Категории", f"a:scats:{sid}")])
     rows.append([
-        b("✅ Проверенный" if not shop.verified else "✖️ Снять «Проверенный»", f"x:sver:{sid}"),
+        b("✅ Проверенный" if not shop.verified else "✖️ Снять отметку Проверенный", f"x:sver:{sid}"),
         b("👁 Опубликовать" if not shop.is_active else "🙈 Скрыть", f"x:sact:{sid}",
           "success" if not shop.is_active else None),
     ])
@@ -190,7 +190,7 @@ async def act_shop_active(ctx: Ctx, shop_id: str):
     shop = ctx.app.catalog.shops.get(int(shop_id))
     await ctx.log("shop.publish" if shop and shop.is_active else "shop.hide", shop_id)
     if shop and shop.is_active and not shop.tags and not shop.cities:
-        ctx.notice = "⚠️ Магазин опубликован, но без меток и городов — его найдут только через поиск."
+        ctx.notice = "⚠️ Магазин опубликован, но у него нет меток и городов. Найти его можно будет только через поиск."
     return f"a:shop:{shop_id}"
 
 
@@ -204,7 +204,7 @@ async def act_shop_move(ctx: Ctx, shop_id: str, delta: str):
 async def view_shop_delete(ctx: Ctx, shop_id: str) -> ViewResult:
     shop = ctx.app.catalog.shops.get(int(shop_id))
     name = escape(shop.label) if shop else shop_id
-    return (f"🗑 Удалить магазин <b>{name}</b> навсегда?\nМожно просто скрыть — тогда его легко вернуть.",
+    return (f"🗑 Удалить магазин <b>{name}</b> навсегда?\nЕсли магазин может вернуться, лучше просто скрыть его.",
             [[b("🗑 Да, удалить", f"x:sdel:{shop_id}", "danger"), b("✖️ Отмена", f"a:shop:{shop_id}")]])
 
 
@@ -220,7 +220,7 @@ async def act_shop_delete(ctx: Ctx, shop_id: str):
 
 # ---------- контакты ----------
 CONTACTS_HELP = (
-    "Отправьте контакты — каждый с новой строки в формате\n"
+    "Отправьте контакты, каждый с новой строки, в формате\n"
     "<code>Текст кнопки | ссылка</code>\n\n"
     "Примеры:\n"
     "<code>💬 Написать | @shop_manager</code>\n"
@@ -240,7 +240,7 @@ async def view_contacts(ctx: Ctx, shop_id: str) -> ViewResult:
     if shop.contacts:
         rows.append([b("🗑 Очистить", f"x:cclr:{shop_id}", "danger")])
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    return f"📞 <b>Контакты «{escape(shop.label)}»</b>\n\n{lines}", rows
+    return f"📞 <b>Контакты: {escape(shop.label)}</b>\n\n{lines}", rows
 
 
 @action("cset", P)
@@ -290,8 +290,8 @@ async def view_shop_tags(ctx: Ctx, shop_id: str) -> ViewResult:
             r.append(b(f"⏳ {fmt_date(shop.tags[tag.id], tz)}", f"x:stexp:{shop_id}:{tag.id}"))
         rows.append(r)
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    html = (f"🏷 <b>Метки «{escape(shop.label)}»</b>\n\n"
-            "Нажмите на метку, чтобы включить/выключить. ⏳ — срок размещения: "
+    html = (f"🏷 <b>Метки: {escape(shop.label)}</b>\n\n"
+            "Нажмите на метку, чтобы включить или выключить её. ⏳ это срок размещения: "
             "по его окончании метка снимется сама, а за сутки придёт напоминание.")
     return html, rows
 
@@ -316,7 +316,7 @@ async def act_shop_tag_expiry(ctx: Ctx, shop_id: str, tag_id: str):
         "Отправьте срок размещения:\n"
         "• число дней, например <code>30</code>\n"
         "• или дату окончания <code>ДД.ММ.ГГГГ</code>\n"
-        "• <code>0</code> — бессрочно",
+        "• <code>0</code>, чтобы метка была бессрочной",
         f"a:stags:{shop_id}", shop_id, tag_id,
     )
 
@@ -368,8 +368,38 @@ async def view_shop_cities(ctx: Ctx, shop_id: str, page: str = "0") -> ViewResul
         nav.append(b("▶️", f"a:scity:{shop_id}:{p + 1}"))
     rows.append(nav)
     rows.append([b("✅ Все", f"x:scall:{shop_id}:1"), b("▫️ Ни одного", f"x:scall:{shop_id}:0")])
+    rows.append([b("➕ Новый город", f"x:scnew:{shop_id}", "success")])
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    return f"🏙 <b>Города «{escape(shop.label)}»</b> — выбрано {len(shop.cities)}", rows
+    return (f"🏙 <b>Города: {escape(shop.label)}</b>\nВыбрано: {len(shop.cities)}\n\n"
+            "Отметьте все города, где работает магазин. ⭐️ главные города (они в главном меню). "
+            "Если отмечен любой другой город, магазин попадёт в 🌍 Другие города, "
+            "а все его города будут написаны в карточке."), rows
+
+
+@action("scnew", P)
+async def act_shop_city_new(ctx: Ctx, shop_id: str):
+    return await ctx.ask("scnew", "Отправьте название города. Он добавится в Другие города и сразу "
+                                  "отметится у этого магазина. Можно несколько, каждый с новой строки.",
+                         f"a:scity:{shop_id}:0", shop_id)
+
+
+@on_input("scnew", P)
+async def in_shop_city_new(ctx: Ctx, message: Message, shop_id: str):
+    names = [" ".join(n.split())[:64] for n in (message.text or "").split("\n") if n.strip()]
+    if not names:
+        raise InputError("Нужно название города.")
+    db = ctx.app.db
+    existing = {c.label.casefold(): c.id for c in ctx.app.catalog.cities.values()}
+    pos = (await db.fetchval("SELECT COALESCE(MAX(position), -1) + 1 FROM cities WHERE is_main = 0")) or 0
+    for i, name in enumerate(names):
+        city_id = existing.get(name.casefold())
+        if city_id is None:  # такого города ещё нет — создаём
+            city_id = await db.execute("INSERT INTO cities(label, is_main, position) VALUES (?, 0, ?)", (name, pos + i))
+        await db.execute("INSERT OR IGNORE INTO shop_cities(shop_id, city_id) VALUES (?, ?)", (int(shop_id), city_id))
+    await ctx.reload()
+    await ctx.log("city.create", ", ".join(names))
+    ctx.notice = "✅ Город добавлен и отмечен у магазина."
+    return f"a:scity:{shop_id}:0"
 
 
 @action("sct", P)
@@ -405,8 +435,8 @@ async def view_shop_categories(ctx: Ctx, shop_id: str) -> ViewResult:
     rows = grid([b(f"{'✅' if c.id in shop.categories else '▫️'} {c.label}", f"x:scat:{shop_id}:{c.id}")
                  for c in cat.categories.values()], 2)
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    return (f"🗂 <b>Категории «{escape(shop.label)}»</b>\nОтметьте, что продаёт магазин. "
-            "Ассортимент поменялся — просто переставьте галочки."), rows
+    return (f"🗂 <b>Категории: {escape(shop.label)}</b>\nОтметьте, что продаёт магазин. "
+            "Поменялся ассортимент, просто переставьте галочки."), rows
 
 
 @action("scat", P)

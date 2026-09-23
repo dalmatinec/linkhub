@@ -135,6 +135,7 @@ class Catalog:
         self.by_city: dict[int, list[Shop]] = {}
         self.all_shops: list[Shop] = []
         self.active_categories: list[Category] = []
+        self.other_shops: list[Shop] = []  # магазины хотя бы в одном не главном городе
         self.by_category: dict[int, list[Shop]] = {}
         self.by_city_category: dict[tuple[int, int], list[Shop]] = {}
         self.city_categories: dict[int, list[Category]] = {}
@@ -230,6 +231,8 @@ class Catalog:
         for lst in self.by_city.values():
             lst.sort(key=self.shop_rank)
 
+        other_ids = {c.id for c in self.other_cities}
+        self.other_shops = [s for s in self.all_shops if s.cities & other_ids]
         self.active_categories = [c for c in self.categories.values() if c.is_active]
         active_cat_ids = {c.id for c in self.active_categories}
         self.by_category = {c.id: [] for c in self.active_categories}

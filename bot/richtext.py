@@ -80,7 +80,7 @@ def parse_contacts(message: Message) -> tuple[list[tuple[str, str, str | None]],
         if not chunk.strip():
             continue
         if "|" not in chunk:
-            errors.append(f"нет «|»: {line.strip()[:40]}")
+            errors.append(f"нет разделителя |: {line.strip()[:40]}")
             continue
         label, url = chunk.rsplit("|", 1)
         label = " ".join(label.split())[:LABEL_LIMIT]
