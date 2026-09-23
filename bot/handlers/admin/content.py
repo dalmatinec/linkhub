@@ -304,13 +304,35 @@ async def view_tag(ctx: Ctx, tag_id: str) -> ViewResult:
     html = (f"🏷 <b>{escape(tag.label)}</b>\n"
             f"Магазинов: {len(cat.by_tag.get(tag.id, []))}\n"
             f"Кнопки меню: {escape(', '.join(used)) or 'нет'}")
-    rows: Rows = [
+    rows: Rows = []
+    if not used:
+        rows.append([b("➕ Добавить кнопку в главное меню", f"x:tagbtn:{tag_id}", "success")])
+    rows += [
         [b("✏️ Переименовать", f"x:lbl:tag:{tag_id}")],
         [b("⬆️ Приоритет выше", f"x:tmv:{tag_id}:-1"), b("⬇️ Ниже", f"x:tmv:{tag_id}:1")],
         [b("🗑 Удалить", f"a:tdel:{tag_id}", "danger")],
         back_btn("a:tags"),
     ]
     return html, rows
+
+
+@action("tagbtn", "cities")
+async def act_tag_menu_button(ctx: Ctx, tag_id: str):
+    """Кнопка подборки в главном меню одним нажатием: магазины с меткой появятся там сами."""
+    cat = ctx.app.catalog
+    tag = cat.tags.get(int(tag_id))
+    if tag is None:
+        return "a:tags"
+    db = ctx.app.db
+    row = await db.fetchval("SELECT COALESCE(MAX(row), -1) + 1 FROM menu_items WHERE parent_id = ?", (cat.root_id,))
+    item_id = await db.execute(
+        "INSERT INTO menu_items(parent_id, kind, payload, label, html, row, position) VALUES (?, 'tag', ?, ?, ?, ?, 0)",
+        (cat.root_id, str(tag.id), tag.label, f"<b>{escape(tag.label)}</b>", row))
+    await ctx.reload()
+    await ctx.log("menu.create", f"{item_id}: {tag.label}")
+    ctx.notice = ("✅ Кнопка добавлена в главное меню (внизу). Все магазины с этой меткой появятся в ней сами. "
+                  "Здесь можно поменять эмодзи, цвет и место кнопки.")
+    return f"a:item:{item_id}"
 
 
 @action("tmv", "cities")

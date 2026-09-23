@@ -588,3 +588,54 @@ def test_video_as_gif_autoplay(tmp_path):
         assert sent and isinstance(sent[-1].animation, FSInputFile), "перезалито как GIF"
         assert h.screen(USER).kind == "animation"
     run(scenario())
+
+
+def test_smart_search(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        gift = await make_shop(h, "Gift Shop")  # Алматы, VPN, «Подарки Telegram и VPN»
+        await h.click(OWNER, f"x:htm:shop:{gift}")
+        await h.send(OWNER, "Подарки Telegram от 1500 тг и VPN 2000₸")
+        star = await make_shop(h, "Star Market")
+        await h.click(OWNER, f"x:htm:shop:{star}")
+        await h.send(OWNER, "Звёзды Telegram по 500 тг")
+        astana = next(c.id for c in h.app.catalog.cities.values() if c.label == "Астана")
+        almaty = next(c.id for c in h.app.catalog.cities.values() if c.label == "Алматы")
+        await h.click(OWNER, f"x:sct:{star}:{almaty}:0")  # убрать Алматы
+        await h.click(OWNER, f"x:sct:{star}:{astana}:0")
+        await h.click(OWNER, f"x:scat:{star}:1")  # убрать VPN
+
+        from bot import search
+        cat = h.app.catalog
+        names = lambda q: [s.label for s in search.run(cat, q)[0]]  # noqa: E731
+        assert names("vpn алматы") == ["Gift Shop"]
+        assert names("в астане") == ["Star Market"]
+        assert names("vpn астана") == []
+        assert names("до 1000") == ["Star Market"], "цена из текста карточки"
+        assert set(names("telegram 3000")) == {"Gift Shop", "Star Market"}, "просто число — бюджет"
+        assert names("подарков") == ["Gift Shop"], "по основе слова"
+        assert names("звезды") == ["Star Market"], "ё = е"
+        assert names("gift") == ["Gift Shop"]
+        assert set(names("премиум")) == {"Gift Shop", "Star Market"}, "метка как фильтр"
+
+        await h.send(USER, "/start")
+        await h.press(USER, "Поиск")
+        await h.send(USER, "vpn алматы до 5000")
+        text = h.screen(USER).text
+        assert "Алматы" in text and "≤ 5000" in text and h.labels(USER)[0] == ["Gift Shop"]
+    run(scenario())
+
+
+def test_new_tag_menu_button(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)
+        await h.click(OWNER, "x:tnew")
+        await h.send(OWNER, "Новинки")
+        tag_id = max(h.app.catalog.tags)
+        await h.click(OWNER, f"x:tagbtn:{tag_id}")
+        await h.click(OWNER, f"x:stt:{shop_id}:{tag_id}")
+        await h.send(USER, "/start")
+        await h.press(USER, "Новинки")
+        assert h.labels(USER)[0] == ["Gift Shop"], "метку дали — магазин сам в подборке"
+    run(scenario())

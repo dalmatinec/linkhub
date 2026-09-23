@@ -263,12 +263,6 @@ class Catalog:
         item = self.menu.get(item_id)
         return [c for c in item.children if c.is_active] if item else []
 
-    def search(self, query: str, limit: int = 100) -> list[Shop]:
-        words = query.casefold().split()
-        if not words:
-            return []
-        return [s for s in self.all_shops if all(w in s.search_key for w in words)][:limit]
-
     # ---------- языки ----------
     @property
     def base_lang(self) -> str:

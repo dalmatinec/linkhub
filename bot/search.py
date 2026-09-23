@@ -1,0 +1,201 @@
+"""Умный поиск: «vpn алматы до 5000», «подарки в астане», «gift shop».
+
+Из запроса выделяются фильтры — город, категория, метка, цена, — а оставшиеся слова ищутся
+в названии, описании и переводах магазина. Слова сравниваются по основе,
+поэтому «подарков», «подарки» и «подарок» находят одно и то же."""
+import re
+from dataclasses import dataclass, field
+
+from .catalog import Catalog, Shop
+
+CURRENCY = r"(?:₸|тг|тенге|kzt|₽|руб(?:лей|\.)?|р\.|\$|usd|сом)"
+_NUM = r"\d[\d\s]{0,9}(?:[.,]\d+)?\s*(?:к|k|тыс\.?)?"
+# цены в тексте карточки: «1500 тг», «от 2 000₸», «цена 900»
+PRICE_IN_TEXT = re.compile(rf"(?:(?:от|до|цена|прайс|стоимость)\s*({_NUM})|({_NUM})\s*{CURRENCY})", re.I)
+MAX_RE = re.compile(rf"(?:до|дешевле|не дороже|max|макс(?:имум)?|<=?|≤)\s*({_NUM})\s*{CURRENCY}?", re.I)
+MIN_RE = re.compile(rf"(?:от|дороже|min|мин(?:имум)?|>=?|≥)\s*({_NUM})\s*{CURRENCY}?", re.I)
+BARE_RE = re.compile(rf"(?<![\w])({_NUM})\s*{CURRENCY}?(?![\w])", re.I)
+WORD_RE = re.compile(r"[\w@]+", re.U)
+STOP_WORDS = {"в", "во", "на", "и", "или", "по", "для", "с", "со", "из", "у", "the", "in", "a", "an", "and", "for",
+              "магазин", "магазины", "купить", "нужен", "нужно", "хочу", "где", "есть"}
+
+
+def to_number(raw: str) -> int | None:
+    raw = raw.strip().lower().replace(" ", "").replace(",", ".")
+    mult = 1000 if raw.endswith(("к", "k", "тыс", "тыс.")) else 1
+    raw = re.sub(r"[^\d.]", "", raw)
+    try:
+        return int(float(raw) * mult) if raw else None
+    except ValueError:
+        return None
+
+
+def shop_prices(text: str) -> list[int]:
+    out = []
+    for m in PRICE_IN_TEXT.finditer(text):
+        n = to_number(m.group(1) or m.group(2))
+        if n and n >= 10:
+            out.append(n)
+    return out
+
+
+_price_cache: dict[int, tuple[str, list[int]]] = {}
+
+
+def _prices(shop: Shop) -> list[int]:
+    cached = _price_cache.get(shop.id)
+    if cached is None or cached[0] != shop.plain:
+        cached = _price_cache[shop.id] = (shop.plain, shop_prices(shop.plain))
+    return cached[1]
+
+
+def stem(word: str) -> str:
+    """Грубая основа слова: отрезаем окончание, чтобы «подарков» ≈ «подарки»."""
+    word = word.casefold().replace("ё", "е")
+    if len(word) > 6:
+        return word[:-2]
+    if len(word) > 4:
+        return word[:-1]
+    return word
+
+
+def _names(label: str) -> str:
+    """Название без эмодзи: «🔐 VPN» → «vpn»."""
+    return " ".join(WORD_RE.findall(label)).casefold().replace("ё", "е")
+
+
+def _matches_name(token: str, name: str) -> bool:
+    """Слово запроса совпадает с названием города/категории с учётом падежей («астане» → «астана»)."""
+    if not name:
+        return False
+    if token == name:
+        return True
+    if len(name) < 4:  # «топ» ↔ «топы», «vpn» ↔ «vpn»
+        return token.startswith(name) and len(token) <= len(name) + 2
+    if len(token) >= 4 and len(name) >= 4:
+        base = name[:max(4, len(name) - 2)]
+        return token.startswith(base) or name.startswith(stem(token))
+    return False
+
+
+@dataclass
+class Query:
+    words: list[str] = field(default_factory=list)
+    cities: set[int] = field(default_factory=set)
+    categories: set[int] = field(default_factory=set)
+    category_stems: list[str] = field(default_factory=list)  # магазин без категории, но с «vpn» в тексте — тоже найдётся
+    tags: set[int] = field(default_factory=set)
+    price_max: int | None = None
+    price_min: int | None = None
+
+    @property
+    def has_filters(self) -> bool:
+        return bool(self.cities or self.categories or self.tags or self.price_max or self.price_min)
+
+
+def parse(cat: Catalog, text: str) -> Query:
+    q = Query()
+    text = " " + text.casefold().replace("ё", "е") + " "
+
+    m = MAX_RE.search(text)
+    if m:
+        q.price_max = to_number(m.group(1))
+        text = text.replace(m.group(0), " ")
+    m = MIN_RE.search(text)
+    if m:
+        q.price_min = to_number(m.group(1))
+        text = text.replace(m.group(0), " ")
+    if q.price_max is None and q.price_min is None:
+        m = BARE_RE.search(text)  # просто число — это бюджет: «vpn 3000»
+        n = to_number(m.group(1)) if m else None
+        if n and n >= 100:
+            q.price_max = n
+            text = text.replace(m.group(0), " ")
+
+    # названия на всех языках: город «Алматы» найдётся и как «Almaty»
+    def names(kind: str, items) -> list[tuple[int, str]]:
+        out = []
+        for obj in items:
+            out.append((obj.id, _names(obj.label)))
+            for lang in cat.languages:
+                tr = cat.translations.get((kind, str(obj.id), "label", lang))
+                if tr:
+                    out.append((obj.id, _names(tr[0])))
+        return out
+
+    cities = names("city", [c for c in cat.cities.values() if c.is_active])
+    categories = names("cat", cat.active_categories)
+    tags = names("tag", cat.tags.values())
+
+    tokens = WORD_RE.findall(text)
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        pair = f"{tok} {tokens[i + 1]}" if i + 1 < len(tokens) else ""
+        hit = False
+        for pool, target in ((cities, q.cities), (categories, q.categories), (tags, q.tags)):
+            for obj_id, name in pool:
+                if pair and " " in name and _matches_name(pair, name):  # «усть каменогорск»
+                    target.add(obj_id)
+                    i += 1
+                    hit = True
+                    break
+                if _matches_name(tok, name):
+                    target.add(obj_id)
+                    if target is q.categories:
+                        q.category_stems.append(stem(tok))
+                    hit = True
+                    break
+            if hit:
+                break
+        if not hit and tok not in STOP_WORDS and not tok.isdigit():
+            q.words.append(tok)
+        i += 1
+    return q
+
+
+def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
+    q = parse(cat, text)
+    if not q.words and not q.has_filters:
+        return [], q
+    stems = [stem(w) for w in q.words]
+    scored: list[tuple[int, Shop]] = []
+    for shop in cat.all_shops:
+        if q.cities and not (shop.cities & q.cities):
+            continue
+        key = shop.search_key.replace("ё", "е")
+        if q.categories and not (shop.categories & q.categories) \
+                and not any(s in key for s in q.category_stems):
+            continue
+        if q.tags and not (set(shop.tags) & q.tags):
+            continue
+        if q.price_max is not None or q.price_min is not None:
+            prices = _prices(shop)
+            if not prices:
+                continue
+            if q.price_max is not None and min(prices) > q.price_max:
+                continue
+            if q.price_min is not None and max(prices) < q.price_min:
+                continue
+        if not all(s in key for s in stems):
+            continue
+        name = _names(shop.label)
+        score = sum(2 for s in stems if s in name)  # совпадение в названии — выше
+        scored.append((score, shop))
+    scored.sort(key=lambda x: (-x[0], cat.shop_rank(x[1])))
+    return [s for _, s in scored[:limit]], q
+
+
+def describe(cat: Catalog, tr, q: Query) -> str:
+    """Строка с распознанными фильтрами: «🏙 Алматы · 🗂 VPN · 💰 до 5000»."""
+    parts = [f"🏙 {tr.label('city', cat.cities[c])}" for c in q.cities if c in cat.cities]
+    parts += [tr.label("cat", cat.categories[c]) for c in q.categories if c in cat.categories]
+    parts += [f"🏷 {tr.label('tag', cat.tags[t])}" for t in q.tags if t in cat.tags]
+    if q.price_min is not None and q.price_max is not None:
+        parts.append(f"💰 {q.price_min}–{q.price_max}")
+    elif q.price_max is not None:
+        parts.append(f"💰 ≤ {q.price_max}")
+    elif q.price_min is not None:
+        parts.append(f"💰 ≥ {q.price_min}")
+    return " · ".join(parts)
+

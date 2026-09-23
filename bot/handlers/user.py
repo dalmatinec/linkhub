@@ -24,6 +24,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 
+from .. import search
 from ..app import App
 from ..catalog import AppField, MenuItem, Shop, Tr, now
 from ..media import MediaError
@@ -223,10 +224,13 @@ def screen_card(app: App, tr: Tr, shop: Shop, ctx: str, is_fav: bool = False):
 
 def screen_search_results(app: App, tr: Tr, query: str, page: int):
     cat = app.catalog
-    results = cat.search(query)
+    results, parsed = search.run(cat, query)
     search_item = next((i for i in cat.menu.values() if i.kind == "search" and i.is_active), None)
     back = f"m:{search_item.parent_id}" if search_item and search_item.parent_id else f"m:{cat.root_id}"
     header = fill(tr.text("search_results" if results else "search_empty"), query=query)
+    filters = search.describe(cat, tr, parsed)
+    if filters:
+        header += f"\n<i>{escape(filters)}</i>"
     html, kb = shop_list(app, tr, results, page, header, "q", "q:", back)
     if not results:  # «Ничего не найдено» уже сказано — без «пусто»
         html = header
