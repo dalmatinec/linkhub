@@ -6,7 +6,7 @@ from html import escape
 from aiogram.types import Message
 
 from ...catalog import Shop, now
-from ...richtext import parse_contacts, parse_label
+from ...richtext import normalize_url, parse_contacts, parse_label
 from ...ui import button, grid, paginate
 from ..user import screen_card
 from .core import (
@@ -134,7 +134,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         f"Метки: {escape(tags)}\n"
         f"Города: {escape(cities)}\n"
         f"Категории: {escape(categories)}\n"
-        f"Контактов: {len(shop.contacts)}\n"
+        f"Кнопок оператора: {len(shop.contacts)}\n"
         f"Медиа: {media_line(app, shop.media_id)}\n"
         f"Просмотры: за 7 дней <b>{week}</b>, за 30 дней <b>{month}</b>\n"
         f"Ссылка: {escape(link)}\n\n"
@@ -142,7 +142,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     )
     sid = shop.id
     rows: Rows = editor_rows("shop", str(sid), row, app=app)
-    rows.append([b("📞 Контакты", f"a:cont:{sid}"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
+    rows.append([b("👤 Кнопки оператора", f"a:cont:{sid}", "primary"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
     rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
                  b("🗂 Категории", f"a:scats:{sid}")])
     rows.append([
@@ -218,16 +218,21 @@ async def act_shop_delete(ctx: Ctx, shop_id: str):
     return "a:shops:0"
 
 
-# ---------- контакты ----------
+# ---------- кнопки оператора ----------
 CONTACTS_HELP = (
-    "Отправьте контакты, каждый с новой строки, в формате\n"
-    "<code>Текст кнопки | ссылка</code>\n\n"
-    "Примеры:\n"
-    "<code>💬 Написать | @shop_manager</code>\n"
-    "<code>📢 Канал | https://t.me/shop_channel</code>\n"
-    "<code>🌐 Сайт | https://example.com</code>\n\n"
-    "Премиум-эмодзи в строке станет иконкой кнопки. Список заменится целиком."
+    "Отправьте все кнопки списком, каждую с новой строки:\n"
+    "<code>Текст кнопки | @username или ссылка</code>\n\n"
+    "Например:\n"
+    "<code>💬 Написать оператору | @shop_manager</code>\n"
+    "<code>📢 Канал | https://t.me/shop_channel</code>\n\n"
+    "Все старые кнопки заменятся этим списком."
 )
+LINK_HELP = ("Отправьте ник оператора, например <code>@operator</code>, "
+             "или ссылку: <code>t.me/…</code>, <code>https://…</code>")
+
+
+def _contact(shop: Shop, contact_id: str):
+    return next((c for c in shop.contacts if c.id == int(contact_id)), None)
 
 
 @view("cont", P)
@@ -235,12 +240,110 @@ async def view_contacts(ctx: Ctx, shop_id: str) -> ViewResult:
     shop = ctx.app.catalog.shops.get(int(shop_id))
     if shop is None:
         return await view_shops(ctx)
-    lines = "\n".join(f"• {escape(c.label)} → {escape(c.url)}" for c in shop.contacts) or "<i>нет</i>"
-    rows: Rows = [[b("✏️ Заменить контакты", f"x:cset:{shop_id}")]]
+    lines = [f"👤 <b>Кнопки оператора: {escape(shop.label)}</b>\n"]
     if shop.contacts:
-        rows.append([b("🗑 Очистить", f"x:cclr:{shop_id}", "danger")])
+        lines.append("Так они выглядят в карточке. Нажмите на кнопку, чтобы сменить оператора, "
+                     "поменять подпись или удалить её.")
+    else:
+        lines.append("Кнопок пока нет. Нажмите ➕ Добавить оператора и отправьте его ник.")
+    rows: Rows = [[b(c.label, f"a:cont1:{shop_id}:{c.id}")] for c in shop.contacts]
+    rows.append([b("➕ Добавить оператора", f"x:cadd:{shop_id}", "success")])
+    rows.append([b("📋 Заменить все кнопки списком", f"x:cset:{shop_id}")])
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    return f"📞 <b>Контакты: {escape(shop.label)}</b>\n\n{lines}", rows
+    return "\n".join(lines), rows
+
+
+@view("cont1", P)
+async def view_contact(ctx: Ctx, shop_id: str, contact_id: str) -> ViewResult:
+    shop = ctx.app.catalog.shops.get(int(shop_id))
+    c = _contact(shop, contact_id) if shop else None
+    if c is None:
+        return await view_contacts(ctx, shop_id)
+    html = (f"👤 <b>{escape(c.label)}</b>\n"
+            f"Ведёт на: {escape(c.url)}\n\n"
+            "Оператор сменился? Нажмите 🔄 Сменить оператора и отправьте новый ник.")
+    rows: Rows = [
+        [b("🔄 Сменить оператора", f"x:clink:{shop_id}:{c.id}", "primary")],
+        [b("✏️ Подпись кнопки", f"x:clabel:{shop_id}:{c.id}")],
+        [b("⬆️ Выше", f"x:cmove:{shop_id}:{c.id}:-1"), b("⬇️ Ниже", f"x:cmove:{shop_id}:{c.id}:1")],
+        [b("🗑 Удалить кнопку", f"x:cdel:{shop_id}:{c.id}", "danger")],
+        back_btn(f"a:cont:{shop_id}"),
+    ]
+    return html, rows
+
+
+@action("cadd", P)
+async def act_contact_add(ctx: Ctx, shop_id: str):
+    return await ctx.ask("cadd", "➕ <b>Новая кнопка оператора</b>\n" + LINK_HELP, f"a:cont:{shop_id}", shop_id)
+
+
+@on_input("cadd", P)
+async def in_contact_add(ctx: Ctx, message: Message, shop_id: str):
+    url = normalize_url(message.text or "")
+    if url is None:
+        raise InputError("Не похоже на ник или ссылку. " + LINK_HELP)
+    db = ctx.app.db
+    label = ctx.app.catalog.button("operator").label
+    pos = (await db.fetchval("SELECT COALESCE(MAX(position), -1) + 1 FROM shop_contacts WHERE shop_id = ?",
+                             (int(shop_id),))) or 0
+    await db.execute("INSERT INTO shop_contacts(shop_id, label, url, position) VALUES (?, ?, ?, ?)",
+                     (int(shop_id), label, url, pos))
+    await ctx.reload()
+    await ctx.log("shop.contacts", shop_id)
+    ctx.notice = "✅ Кнопка добавлена. Подпись можно поменять, нажав на неё."
+    return f"a:cont:{shop_id}"
+
+
+@action("clink", P)
+async def act_contact_link(ctx: Ctx, shop_id: str, contact_id: str):
+    return await ctx.ask("clink", "🔄 <b>Новый оператор</b>\n" + LINK_HELP, f"a:cont1:{shop_id}:{contact_id}",
+                         shop_id, contact_id)
+
+
+@on_input("clink", P)
+async def in_contact_link(ctx: Ctx, message: Message, shop_id: str, contact_id: str):
+    url = normalize_url(message.text or "")
+    if url is None:
+        raise InputError("Не похоже на ник или ссылку. " + LINK_HELP)
+    await ctx.app.db.execute("UPDATE shop_contacts SET url = ? WHERE id = ? AND shop_id = ?",
+                             (url, int(contact_id), int(shop_id)))
+    await ctx.reload()
+    await ctx.log("shop.contacts", shop_id)
+    ctx.notice = "✅ Оператор сменён. Покупатели теперь будут писать на новый контакт."
+    return f"a:cont1:{shop_id}:{contact_id}"
+
+
+@action("clabel", P)
+async def act_contact_label(ctx: Ctx, shop_id: str, contact_id: str):
+    return await ctx.ask("clabel", "Отправьте новую подпись кнопки, например: 💬 Написать Айгерим. "
+                                   "Премиум-эмодзи в начале станет иконкой.", f"a:cont1:{shop_id}:{contact_id}",
+                         shop_id, contact_id)
+
+
+@on_input("clabel", P)
+async def in_contact_label(ctx: Ctx, message: Message, shop_id: str, contact_id: str):
+    label, icon = parse_label(message) if message.text else ("", None)
+    if not label:
+        raise InputError("Нужен текст подписи.")
+    await ctx.app.db.execute("UPDATE shop_contacts SET label = ?, icon = COALESCE(?, icon) WHERE id = ? AND shop_id = ?",
+                             (label, icon, int(contact_id), int(shop_id)))
+    await ctx.reload()
+    return f"a:cont1:{shop_id}:{contact_id}"
+
+
+@action("cmove", P)
+async def act_contact_move(ctx: Ctx, shop_id: str, contact_id: str, delta: str):
+    await move(ctx, "shop_contacts", int(contact_id), int(delta), "shop_id = ?", (int(shop_id),))
+    return f"a:cont1:{shop_id}:{contact_id}"
+
+
+@action("cdel", P)
+async def act_contact_delete(ctx: Ctx, shop_id: str, contact_id: str):
+    await ctx.app.db.execute("DELETE FROM shop_contacts WHERE id = ? AND shop_id = ?", (int(contact_id), int(shop_id)))
+    await ctx.reload()
+    await ctx.log("shop.contacts", shop_id)
+    ctx.notice = "🗑 Кнопка удалена."
+    return f"a:cont:{shop_id}"
 
 
 @action("cset", P)
@@ -254,7 +357,7 @@ async def in_contacts(ctx: Ctx, message: Message, shop_id: str):
     if errors:
         raise InputError("Не удалось разобрать:\n" + "\n".join(errors[:10]))
     if not contacts:
-        raise InputError("Нет ни одного контакта.")
+        raise InputError("Нет ни одной кнопки.")
     db = ctx.app.db
     await db.execute("DELETE FROM shop_contacts WHERE shop_id = ?", (int(shop_id),))
     await db.executemany(
@@ -263,14 +366,7 @@ async def in_contacts(ctx: Ctx, message: Message, shop_id: str):
     )
     await ctx.reload()
     await ctx.log("shop.contacts", shop_id)
-    ctx.notice = "✅ Контакты сохранены"
-    return f"a:cont:{shop_id}"
-
-
-@action("cclr", P)
-async def act_contacts_clear(ctx: Ctx, shop_id: str):
-    await ctx.app.db.execute("DELETE FROM shop_contacts WHERE shop_id = ?", (int(shop_id),))
-    await ctx.reload()
+    ctx.notice = "✅ Кнопки сохранены"
     return f"a:cont:{shop_id}"
 
 

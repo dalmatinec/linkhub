@@ -99,7 +99,7 @@ BUTTON_NAMES = {
     "other_cities": "🌍 Другие города",
     "report": "🚩 Пожаловаться",
     "all_shops": "📋 Все магазины города",
-    "my_city": "📍 Мой город ({город})",
+    "operator": "👤 Кнопка оператора (подпись по умолчанию)",
     "fav_add": "⭐ В избранное",
     "fav_remove": "✖️ Из избранного",
     "share": "📤 Поделиться магазином",
@@ -183,23 +183,11 @@ async def view_cities(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("▶️", f"a:cities:{p + 1}"))
     rows.append(nav)
     rows.append([b("➕ Добавить города", "x:cnew", "success")])
-    as_shops = ctx.app.catalog.setting("other_cities_as_shops", 1)
-    rows.append([b("🌍 Другие города: " + ("сразу список магазинов" if as_shops else "сначала список городов"),
-                   "x:othermode")])
     rows.append(back_btn("a:home"))
     html = ("🏙 <b>Города</b>\n\n⭐️ Главные: показываются прямо в главном меню.\n"
             "Остальные собраны под кнопкой 🌍 Другие города. Там сразу список магазинов из этих городов, "
             "а сам город написан в карточке магазина.\n🙈 Скрытые.")
     return html, rows
-
-
-@action("othermode", "cities")
-async def act_other_cities_mode(ctx: Ctx):
-    value = 0 if ctx.app.catalog.setting("other_cities_as_shops", 1) else 1
-    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('other_cities_as_shops', ?)",
-                             (str(value),))
-    await ctx.reload()
-    return "a:cities:0"
 
 
 @action("cnew", "cities")

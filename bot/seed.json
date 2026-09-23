@@ -29,8 +29,7 @@
       "en"
     ],
     "city_categories_min": 6,
-    "card_show_cities": 1,
-    "other_cities_as_shops": 1
+    "card_show_cities": 1
   },
   "texts": {
     "cities": "🏙 <b>Выберите город</b>",
@@ -116,8 +115,8 @@
     "apply_cancel": {
       "label": "✖️ Отмена"
     },
-    "my_city": {
-      "label": "📍 {город}"
+    "operator": {
+      "label": "💬 Написать оператору"
     }
   },
   "tags": [

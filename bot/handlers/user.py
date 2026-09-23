@@ -70,18 +70,12 @@ def back_to_parent(tr: Tr, item: MenuItem) -> list[InlineKeyboardButton]:
 
 
 def city_rows(app: App, tr: Tr, block: MenuItem, user_id: int) -> list[list[InlineKeyboardButton]]:
-    """Блок городов: «📍 Мой город» (если он не среди главных), главные города по 2 в ряд, «Другие города»."""
+    """Блок городов: главные города по 2 в ряд и кнопка «Другие города»."""
     cat = app.catalog
-    rows: list[list[InlineKeyboardButton]] = []
-    mine = cat.cities.get(app.last_city.get(user_id, 0))
-    if mine and mine.is_active and not mine.is_main:
-        b = tr.button("my_city")
-        rows.append([button(fill(b.label, city=tr.label("city", mine)), b.icon or mine.icon, b.style or mine.style,
-                            cb=f"y:{mine.id}:{block.id}:0")])
     btns = [button(tr.label("city", c), c.icon, c.style, cb=f"y:{c.id}:{block.id}:0") for c in cat.main_cities]
     if cat.other_cities:
         btns.append(sys_button(tr, "other_cities", f"o:{block.id}:0"))
-    return rows + grid(btns, int(cat.setting("per_row", 2)))
+    return grid(btns, int(cat.setting("per_row", 2)))
 
 
 def screen_menu(app: App, tr: Tr, item: MenuItem, first_name: str, user_id: int = 0):
@@ -146,18 +140,11 @@ def screen_cities(app: App, tr: Tr, item: MenuItem, user_id: int = 0):
 
 
 def screen_other_cities(app: App, tr: Tr, item_id: int, page: int):
+    """«Другие города»: сразу магазины из всех не главных городов, сам город написан в карточке."""
     cat = app.catalog
-    if cat.setting("other_cities_as_shops", 1):
-        # сразу магазины из всех не главных городов, город написан в карточке
-        html, kb = shop_list(app, tr, cat.other_shops, page, tr.text("other_cities"), f"o{item_id}.",
-                             f"o:{item_id}:", f"m:{item_id}")
-        return html, cat.text("other_cities").media_id, markup(kb)
-    chunk, page, pages = paginate(cat.other_cities, page, int(cat.setting("page_size", 10)))
-    btns = [button(tr.label("city", c), c.icon, c.style, cb=f"y:{c.id}:{item_id}:0") for c in chunk]
-    kb = grid(btns, int(cat.setting("per_row", 2)))
-    kb.append(nav_row(tr, page, pages, lambda p: f"o:{item_id}:{p}"))
-    kb.append([sys_button(tr, "back", f"m:{item_id}")])
-    return tr.text("other_cities"), cat.text("other_cities").media_id, markup(kb)
+    html, kb = shop_list(app, tr, cat.other_shops, page, tr.text("other_cities"), f"o{item_id}.",
+                         f"o:{item_id}:", f"m:{item_id}")
+    return html, cat.text("other_cities").media_id, markup(kb)
 
 
 def city_back(app: App, city_id: int, item_id: int) -> str:
@@ -394,8 +381,6 @@ async def _show_or_home(call: CallbackQuery, state: FSMContext, app: App, tr: Tr
 @router.callback_query(F.data.startswith("y:"))
 async def cb_city(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> None:
     _, city_id, item_id, page = call.data.split(":")
-    if int(city_id) in app.catalog.cities:
-        await app.remember_city(call.from_user.id, int(city_id))
     await _show_or_home(call, state, app, tr, screen_city(app, tr, int(city_id), int(item_id), int(page)))
 
 

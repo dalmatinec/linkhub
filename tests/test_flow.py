@@ -133,21 +133,11 @@ def test_user_navigation(tmp_path):
         await h.press(USER, "Другие города")
         assert h.screen(USER).id == scr.id, "экран редактируется, а не шлётся заново"
         assert "нет магазинов" in h.screen(USER).text, "по умолчанию сразу список магазинов"
-        # режим «сначала список городов»
-        await h.app.db.execute("UPDATE settings SET value = '0' WHERE key = 'other_cities_as_shops'")
-        await h.app.catalog.reload()
+        assert h.labels(USER) == [["◀️ Назад"]], "никакого списка городов"
         await h.press(USER, "Назад")
-        await h.press(USER, "Другие города")
-        labels = h.labels(USER)
-        assert all(len(r) == 2 for r in labels[:5]) and labels[5] == ["1/2", "▶️"] and labels[6] == ["◀️ Назад"]
-        await h.press(USER, "▶️")
-        assert h.labels(USER)[-2] == ["◀️", "2/2"]
-        await h.press(USER, "Уральск")
-        assert "Уральск" in h.screen(USER).text and "нет магазинов" in h.screen(USER).text
+        await h.press(USER, "Шымкент")
+        assert "Шымкент" in h.screen(USER).text and "нет магазинов" in h.screen(USER).text
         await h.press(USER, "Назад")
-        assert h.labels(USER)[-2] == ["◀️", "2/2"], "назад возвращает на ту же страницу городов"
-        await h.press(USER, "Назад")
-        assert h.labels(USER)[1] == ["📍 Уральск"], "мой город первым на главном экране"
         await h.press(USER, "Ещё")
         assert h.labels(USER) == [["📝 Разместить магазин"], ["🌐 Язык"], ["◀️ Назад"]]
 
@@ -713,4 +703,24 @@ def test_other_cities_list_shops(tmp_path):
         assert "Алматы" in h.screen(USER).text and "Экибастуз" in h.screen(USER).text
         await h.press(USER, "Назад")
         assert h.labels(USER)[0] == ["Gift Shop"], "назад из карточки в Другие города"
+    run(scenario())
+
+
+def test_operator_button_easy_change(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)  # кнопки: «💬 Написать | @gift_manager», «Канал | t.me/gifts»
+        await h.click(OWNER, f"a:cont:{shop_id}")
+        assert h.labels(OWNER)[:2] == [["💬 Написать"], ["Канал"]]
+        await h.press(OWNER, "Написать")
+        await h.press(OWNER, "Сменить оператора")
+        await h.send(OWNER, "@new_operator")
+        assert h.app.catalog.shops[shop_id].contacts[0].url == "https://t.me/new_operator"
+        await h.click(OWNER, f"a:cont:{shop_id}")
+        await h.press(OWNER, "Добавить оператора")
+        await h.send(OWNER, "@second_op")
+        c = h.app.catalog.shops[shop_id].contacts[-1]
+        assert (c.label, c.url) == ("💬 Написать оператору", "https://t.me/second_op")
+        await h.send(USER, f"/start shop_{shop_id}")
+        assert h.find(USER, "Написать оператору").url.startswith("https://t.me/second_op?text=")
     run(scenario())
