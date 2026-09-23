@@ -160,17 +160,34 @@ async def in_item_url(ctx: Ctx, message: Message, item_id: str):
 
 @action("irow", P)
 async def act_item_row(ctx: Ctx, item_id: str, delta: str):
+    """Стрелки рядов по шагу:
+    кнопка в ряду не одна — отрывается в новый ряд сразу под/над текущим;
+    кнопка уже одна — приклеивается к соседнему ряду."""
     db = ctx.app.db
     item = ctx.app.catalog.menu.get(int(item_id))
     if item is None:
         return "a:home"
-    new_row = max(0, item.row + int(delta))
-    # в конец нового ряда
-    pos = await db.fetchval(
-        "SELECT COALESCE(MAX(position), -1) + 1 FROM menu_items WHERE parent_id = ? AND row = ? AND id != ?",
-        (item.parent_id, new_row, item.id))
-    await db.execute("UPDATE menu_items SET row = ?, position = ? WHERE id = ?", (new_row, pos, item.id))
-    await _compact_rows(ctx, item.parent_id)
+    down = int(delta) > 0
+    parent, row = item.parent_id, item.row
+    shares_row = await db.fetchval(
+        "SELECT COUNT(*) FROM menu_items WHERE parent_id = ? AND row = ? AND id != ?", (parent, row, item.id))
+    if shares_row:
+        # освобождаем место: ряды ниже сдвигаем на один
+        edge = row + 1 if down else row
+        await db.execute("UPDATE menu_items SET row = row + 1 WHERE parent_id = ? AND row >= ? AND id != ?",
+                         (parent, edge, item.id))
+        await db.execute("UPDATE menu_items SET row = ?, position = 0 WHERE id = ?", (edge, item.id))
+    else:
+        target = row + (1 if down else -1)
+        exists = await db.fetchval("SELECT 1 FROM menu_items WHERE parent_id = ? AND row = ?", (parent, target))
+        if not exists:
+            ctx.notice = "Кнопка уже в самом низу." if down else "Кнопка уже в самом верху."
+            return f"a:item:{item_id}"
+        # сверху пришла — встаёт первой, снизу — последней
+        pos = -1 if down else await db.fetchval(
+            "SELECT COALESCE(MAX(position), -1) + 1 FROM menu_items WHERE parent_id = ? AND row = ?", (parent, target))
+        await db.execute("UPDATE menu_items SET row = ?, position = ? WHERE id = ?", (target, pos, item.id))
+    await _compact_rows(ctx, parent)
     return f"a:item:{item_id}"
 
 

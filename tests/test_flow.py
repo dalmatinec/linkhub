@@ -355,8 +355,9 @@ def test_menu_editing(tmp_path):
         await h.click(OWNER, f"x:iurl:{item_id}")
         await h.send(OWNER, "@our_channel")
         search = next(i for i in h.app.catalog.menu.values() if i.kind == "search")
-        await h.click(OWNER, f"x:irow:{item_id}:-1")  # в ряд к «Разместить магазин»
-        await h.click(OWNER, f"x:irow:{item_id}:-1")  # ещё выше — к «Поиску»
+        await h.click(OWNER, f"x:irow:{item_id}:-1")  # один в ряду → приклеился к «Разместить магазин»
+        await h.click(OWNER, f"x:irow:{item_id}:-1")  # не один → оторвался в свой ряд над ним
+        await h.click(OWNER, f"x:irow:{item_id}:-1")  # один → приклеился к «Поиску»
         await h.send(USER, "/start")
         assert h.labels(USER)[2] == [search.label, "⭐ Избранное", "📢 Наш канал"]
         assert h.find(USER, "Наш канал").url == "https://t.me/our_channel"
@@ -535,4 +536,29 @@ def test_errors_go_to_log_channel(tmp_path):
         task.cancel()
         text = h.tg.chat(-100500)[-1].text
         assert "Ошибка" in text and "ValueError" in text
+    run(scenario())
+
+
+def test_row_arrows_move_one_step(tmp_path):
+    """Две кнопки в ряду: «вниз» сначала отрывает кнопку в свой ряд, второе «вниз» — приклеивает к следующему."""
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        top = next(i for i in h.app.catalog.menu.values() if i.label == "🔥 Топы")
+        await h.send(OWNER, "/admin")
+        await h.send(USER, "/start")
+        await h.click(OWNER, f"x:irow:{top.id}:1")
+        await h.send(USER, "/start")
+        assert h.labels(USER)[:3] == [["💎 Премиум"], ["🔥 Топы"], ["🏙 Выбрать город"]]
+        await h.click(OWNER, f"x:irow:{top.id}:1")
+        await h.send(USER, "/start")
+        assert h.labels(USER)[:2] == [["💎 Премиум"], ["🔥 Топы", "🏙 Выбрать город"]]
+        await h.click(OWNER, f"x:irow:{top.id}:-1")
+        await h.send(USER, "/start")
+        assert h.labels(USER)[:3] == [["💎 Премиум"], ["🔥 Топы"], ["🏙 Выбрать город"]]
+        await h.click(OWNER, f"x:irow:{top.id}:-1")
+        await h.send(USER, "/start")
+        assert h.labels(USER)[0] == ["💎 Премиум", "🔥 Топы"]
+        await h.click(OWNER, f"x:irow:{top.id}:-1")  # снова в своём ряду наверху
+        await h.click(OWNER, f"x:irow:{top.id}:-1")  # уже в самом верху
+        assert "самом верху" in h.screen(OWNER).text
     run(scenario())
