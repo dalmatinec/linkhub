@@ -761,3 +761,17 @@ def test_admin_home_is_short(tmp_path):
         await h.press(OWNER, "Меню")
         assert "Главное меню" in h.screen(OWNER).text
     run(scenario())
+
+
+def test_texts_grouped_by_topic(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "a:texts")
+        assert len(h.labels(OWNER)) <= 7, "тем немного, а не 50 пунктов"
+        await h.press(OWNER, "Карточка магазина")
+        assert h.find(OWNER, "Приветствие оператору") and h.find(OWNER, "🔘 ⭐ В избранное")
+        await h.press(OWNER, "Приветствие оператору")
+        await h.press(OWNER, "Назад")
+        assert "Карточка магазина" in h.screen(OWNER).text, "назад ведёт в ту же тему"
+    run(scenario())

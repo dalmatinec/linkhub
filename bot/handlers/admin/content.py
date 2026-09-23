@@ -112,18 +112,60 @@ BUTTON_NAMES = {
 MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "city_categories", "search_prompt"}
 
 
+# Тексты и кнопки разложены по темам: (название, описание, тексты, кнопки)
+TEXT_GROUPS = [
+    ("🏙 Города и списки", "Экраны городов, категорий и списков магазинов.",
+     ["other_cities", "city_shops", "city_categories", "city_category_shops", "categories", "category_shops",
+      "cities", "empty"], ["other_cities", "all_shops"]),
+    ("🏪 Карточка магазина", "Всё, что видно в карточке и под ней.",
+     ["verified_badge", "card_cities", "card_cities_all", "contact_greeting", "shop_unavailable"],
+     ["operator", "fav_add", "fav_remove", "share", "report"]),
+    ("🔍 Поиск", "", ["search_prompt", "search_results", "search_empty"], []),
+    ("⭐ Избранное", "", ["favorites", "favorites_empty", "fav_added", "fav_removed"], []),
+    ("🚩 Жалобы", "", ["report_prompt", "report_thanks", "report_limit"], []),
+    ("📝 Заявка на размещение", "Анкета для продавцов и ответы им.",
+     ["apply_intro", "apply_step", "apply_wrong", "apply_confirm", "apply_done", "apply_pending", "apply_cooldown",
+      "apply_accepted", "apply_rejected", "moderator_message"],
+     ["apply_start", "apply_skip", "apply_send", "apply_restart", "apply_cancel"]),
+    ("◀️ Назад и страницы", "Кнопки, которые есть почти на каждом экране.", [], ["back", "prev", "next"]),
+    ("🛡 Служебные", "Сообщения при бане, флуде и выборе языка.", ["banned", "flood", "language"], []),
+]
+
+
+def group_of(kind: str, key: str) -> int:
+    """В какой теме лежит текст или кнопка, чтобы «Назад» вёл обратно в неё."""
+    for i, (_, _, texts, btns) in enumerate(TEXT_GROUPS):
+        if key in (texts if kind == "text" else btns):
+            return i
+    return -1
+
+
 @view("texts", "texts")
 async def view_texts(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
-    rows: Rows = [[b("👋 Приветствие (/start)", f"a:item:{cat.root_id}")]]
-    rows += [[b(TEXT_NAMES[k], f"a:text:{k}")] for k in TEXT_NAMES if k in cat.texts]
-    rows.append([button("Системные кнопки", cb="noop")])
-    rows += grid([b(BUTTON_NAMES[k], f"a:btn:{k}") for k in BUTTON_NAMES if k in cat.buttons], 2)
+    rows: Rows = [[b("👋 Приветствие (главный экран)", f"a:item:{cat.root_id}")]]
+    rows += grid([b(title, f"a:txg:{i}") for i, (title, _, _, _) in enumerate(TEXT_GROUPS)], 2)
     rows.append(back_btn("a:cfg"))
     html = ("📝 <b>Тексты и кнопки</b>\n\n"
-            "Выберите, что изменить. Внутри каждого текста написано, где он показывается.\n"
+            "Выберите тему. Внутри каждого текста написано, где он показывается.\n"
             "Слова в фигурных скобках бот заменяет сам: <code>{имя}</code> на имя пользователя, "
             "<code>{город}</code> на название города.")
+    return html, rows
+
+
+@view("txg", "texts")
+async def view_text_group(ctx: Ctx, idx: str) -> ViewResult:
+    cat = ctx.app.catalog
+    if not idx.isdigit() or int(idx) >= len(TEXT_GROUPS):
+        return await view_texts(ctx)
+    title, about, texts, btns = TEXT_GROUPS[int(idx)]
+    rows: Rows = [[b(TEXT_NAMES[k], f"a:text:{k}")] for k in texts if k in cat.texts and k in TEXT_NAMES]
+    if btns:
+        rows += grid([b(f"🔘 {BUTTON_NAMES[k]}", f"a:btn:{k}") for k in btns if k in cat.buttons], 2)
+    rows.append(back_btn("a:texts"))
+    html = f"<b>{title}</b>" + (f"\n{about}" if about else "")
+    if texts and btns:
+        html += "\n\nСверху тексты, ниже 🔘 кнопки."
     return html, rows
 
 
@@ -146,7 +188,8 @@ async def view_text(ctx: Ctx, key: str) -> ViewResult:
     if key not in MEDIA_TEXTS:  # медиа уместно только у экранов
         rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")],
                 [b("🌐 Перевод на другие языки", f"a:trl:text:{key}")]]
-    rows.append(back_btn("a:texts"))
+    g = group_of("text", key)
+    rows.append(back_btn(f"a:txg:{g}" if g >= 0 else "a:texts"))
     return html, rows
 
 
@@ -162,7 +205,9 @@ async def view_button(ctx: Ctx, key: str) -> ViewResult:
             "Так она выглядит 👇")
     rows = [[button(row["label"], row["icon"], row["style"], cb="noop")]]
     rows += editor_rows("btn", key, row, label=True, rich=False)
-    rows.append([b("◀️ Все тексты", "a:texts"), b("📋 Главное меню", f"a:item:{ctx.app.catalog.root_id}")])
+    g = group_of("btn", key)
+    rows.append([b("◀️ Назад", f"a:txg:{g}" if g >= 0 else "a:texts"),
+                 b("📋 Главное меню", f"a:item:{ctx.app.catalog.root_id}")])
     return html, rows
 
 
