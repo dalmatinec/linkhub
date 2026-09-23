@@ -321,7 +321,7 @@ def test_moderator_permissions(tmp_path):
         await h.send(77, "/admin")
         assert [r for r in h.labels(77)] == [["🏪 Магазины"], ["⚙️ Настройки каталога"]]
         await h.click(77, "a:cfg")
-        assert h.labels(77)[0] == ["🗂 Категории товаров", "🔍 Похожие слова"], "из настроек только то, что про поиск"
+        assert h.labels(77)[0] == ["🗂 Категории товаров"], "из настроек только то, что про поиск"
         await h.click(77, "a:users")
         assert "Нет доступа" in h.screen(77).text
         await h.stop()
@@ -630,7 +630,7 @@ def test_smart_search(tmp_path):
     run(scenario())
 
 
-def test_hidden_keywords_and_synonyms(tmp_path):
+def test_hidden_keywords(tmp_path):
     async def scenario():
         h = await Harness(tmp_path).start()
         shop = await make_shop(h, "Gift Shop")
@@ -646,13 +646,6 @@ def test_hidden_keywords_and_synonyms(tmp_path):
         await h.send(OWNER, "-")
         assert names("мишка") == []
 
-        await h.click(OWNER, "x:synset")
-        await h.send(OWNER, "-")
-        assert names("вэпээн") == []
-        await h.click(OWNER, "x:synset")
-        await h.send(OWNER, "вэпээн, vpn\nодно")
-        assert h.app.catalog.setting("search_synonyms") == [["вэпээн", "vpn"]]
-        assert names("вэпээн") == ["Gift Shop"], "похожее слово ведёт на категорию VPN"
     run(scenario())
 
 

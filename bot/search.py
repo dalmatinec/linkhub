@@ -107,17 +107,6 @@ class Query:
         return bool(self.cities or self.categories or self.tags or self.price_max or self.price_min)
 
 
-def synonyms(cat: Catalog, word: str) -> list[str]:
-    """Похожие слова из общего словаря: «впн» → [«впн», «vpn», «вэпээн»]."""
-    word = word.casefold().replace("ё", "е")
-    w_stem = stem(word)
-    for group in cat.setting("search_synonyms", []):
-        words = [g.casefold().replace("ё", "е").strip() for g in group if g.strip()]
-        if any(word == g or w_stem == stem(g) for g in words):
-            return list(dict.fromkeys([word, *words]))
-    return [word]
-
-
 def parse(cat: Catalog, text: str) -> Query:
     q = Query()
     text = " " + text.casefold().replace("ё", "е") + " "
@@ -160,7 +149,7 @@ def parse(cat: Catalog, text: str) -> Query:
         tok = tokens[i]
         pair = f"{tok} {tokens[i + 1]}" if i + 1 < len(tokens) else ""
         hit = False
-        variants = synonyms(cat, tok)  # «впн» узнаётся как категория VPN, если так записано в словаре
+        variants = [tok]
         for pool, target in ((cities, q.cities), (categories, q.categories), (tags, q.tags)):
             for obj_id, name in pool:
                 if pair and " " in name and _matches_name(pair, name):  # «усть каменогорск»
@@ -204,8 +193,7 @@ def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
     q = parse(cat, text)
     if not q.words and not q.has_filters:
         return [], q
-    # каждое слово запроса — группа вариантов: само слово и его синонимы из словаря
-    groups = [synonyms(cat, w) for w in q.words]
+    groups = [[w] for w in q.words]
     stems = [[stem(v) for v in group] for group in groups]
     scored: list[tuple[int, Shop]] = []
     for shop in cat.all_shops:

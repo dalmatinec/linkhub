@@ -592,7 +592,6 @@ CONFIG_SECTIONS = [
     ("cities", "🏙 Города", "a:cities:0"),
     ("cities", "🏷 Метки", "a:tags"),
     ("shops", "🗂 Категории товаров", "a:catgs"),
-    ("shops", "🔍 Похожие слова", "a:syn"),
     ("texts", "🌐 Языки", "a:langs"),
     ("settings", "🛡 Защита", "a:prot"),
     ("settings", "⚙️ Настройки", "a:set"),
