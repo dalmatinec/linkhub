@@ -259,6 +259,10 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE users ADD COLUMN last_city INTEGER;
     """,
+    # 4 — скрытые слова для поиска у магазина
+    """
+    ALTER TABLE shops ADD COLUMN keywords TEXT NOT NULL DEFAULT '';
+    """,
 ]
 
 

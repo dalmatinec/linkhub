@@ -29,7 +29,24 @@
       "en"
     ],
     "city_categories_min": 6,
-    "card_show_cities": 1
+    "card_show_cities": 1,
+    "search_synonyms": [
+      [
+        "впн",
+        "vpn",
+        "вэпээн"
+      ],
+      [
+        "звезды",
+        "stars",
+        "звёзды"
+      ],
+      [
+        "подарки",
+        "gifts",
+        "подарок"
+      ]
+    ]
   },
   "texts": {
     "cities": "🏙 <b>Выберите город</b>",

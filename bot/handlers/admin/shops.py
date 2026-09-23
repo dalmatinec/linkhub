@@ -134,6 +134,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         f"Метки: {escape(tags)}\n"
         f"Города: {escape(cities)}\n"
         f"Категории: {escape(categories)}\n"
+        f"Слова для поиска: {escape(shop.keywords) or 'нет'}\n"
         f"Контакт: {escape(', '.join(c.url.replace('https://t.me/', '@') for c in shop.contacts) or 'не задан')}\n"
         f"Медиа: {media_line(app, shop.media_id)}\n"
         f"Просмотры: за 7 дней <b>{week}</b>, за 30 дней <b>{month}</b>\n"
@@ -146,6 +147,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     for c in shop.contacts:
         rows.append([b(f"👤 {c.label} → {c.url.replace('https://t.me/', '@')}", f"a:cont1:{sid}:{c.id}", "primary")])
     rows.append([b("➕ Добавить контакт", f"x:cadd:{sid}", "success"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
+    rows.append([b("🔑 Слова для поиска", f"x:skw:{sid}")])
     rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
                  b("🗂 Категории", f"a:scats:{sid}")])
     rows.append([
@@ -176,6 +178,31 @@ async def act_shop_preview(ctx: Ctx, shop_id: str):
         await ctx.app.bot.send_message(ctx.chat_id, html, reply_markup=kb)
     await ctx.toast("Предпросмотр отправлен ниже")
     return None
+
+
+@action("skw", P)
+async def act_shop_keywords(ctx: Ctx, shop_id: str):
+    return await ctx.ask(
+        "skw",
+        "🔑 <b>Слова для поиска</b>\n\n"
+        "Покупатели их не видят, но поиск по ним находит этот магазин. Пишите то, как люди будут искать: "
+        "товары, бренды, сленг, ошибки. Через запятую, например:\n"
+        "<code>подарки, gifts, мишка, розы, nft, тг подарки</code>\n\n"
+        "Отправьте знак минус, чтобы очистить.",
+        f"a:shop:{shop_id}", shop_id)
+
+
+@on_input("skw", P)
+async def in_shop_keywords(ctx: Ctx, message: Message, shop_id: str):
+    text = (message.text or "").strip()
+    if not text:
+        raise InputError("Нужен текст.")
+    words = "" if text == "-" else ", ".join(dict.fromkeys(w.strip() for w in text.replace("\n", ",").split(",") if w.strip()))
+    await ctx.app.db.execute("UPDATE shops SET keywords = ?, updated_at = ? WHERE id = ?", (words[:1000], now(), int(shop_id)))
+    await ctx.reload()
+    await ctx.log("shop.keywords", shop_id)
+    ctx.notice = "✅ Слова для поиска сохранены" if words else "Слова для поиска очищены"
+    return f"a:shop:{shop_id}"
 
 
 @action("sver", P)
@@ -549,3 +576,44 @@ async def act_shop_category_toggle(ctx: Ctx, shop_id: str, cat_id: str):
     await ctx.reload()
     await ctx.log("shop.categories", shop_id)
     return f"a:scats:{shop_id}"
+
+
+# ---------- словарь похожих слов для поиска ----------
+@view("syn", P)
+async def view_synonyms(ctx: Ctx) -> ViewResult:
+    groups = ctx.app.catalog.setting("search_synonyms", [])
+    lines = "\n".join(f"• {escape(', '.join(g))}" for g in groups) or "<i>пока пусто</i>"
+    html = ("🔍 <b>Похожие слова для поиска</b>\n\n"
+            "Люди пишут одно и то же по-разному. Если слова стоят в одной строке, поиск считает их одинаковыми: "
+            "ищут «впн», а находятся и магазины, где написано «VPN». Действует для всех магазинов.\n\n"
+            f"<b>Сейчас:</b>\n{lines}")
+    rows: Rows = [[b("✏️ Изменить словарь", "x:synset")], back_btn("a:cfg")]
+    return html, rows
+
+
+@action("synset", P)
+async def act_synonyms_set(ctx: Ctx):
+    return await ctx.ask(
+        "synset",
+        "Отправьте словарь целиком: каждая группа с новой строки, слова через запятую. Например:\n"
+        "<code>впн, vpn, вэпээн\nзвезды, stars, звёзды тг\nподарки, gifts, nft</code>\n\n"
+        "Отправьте знак минус, чтобы очистить словарь.",
+        "a:syn")
+
+
+@on_input("synset", P)
+async def in_synonyms_set(ctx: Ctx, message: Message):
+    import json
+    text = (message.text or "").strip()
+    if not text:
+        raise InputError("Нужен текст.")
+    groups = [] if text == "-" else [
+        list(dict.fromkeys(w.strip() for w in line.split(",") if w.strip()))
+        for line in text.split("\n") if line.strip()]
+    groups = [g for g in groups if len(g) >= 2]
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('search_synonyms', ?)",
+                             (json.dumps(groups, ensure_ascii=False),))
+    await ctx.reload()
+    await ctx.log("settings", "search_synonyms")
+    ctx.notice = f"✅ Сохранено групп: {len(groups)}"
+    return "a:syn"

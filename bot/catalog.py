@@ -109,6 +109,7 @@ class Shop:
     cities: set[int] = field(default_factory=set)
     categories: set[int] = field(default_factory=set)
     contacts: list[Contact] = field(default_factory=list)
+    keywords: str = ""  # скрытые слова для поиска, покупатели их не видят
     search_key: str = ""
 
 
@@ -189,7 +190,8 @@ class Catalog:
             shops[r["id"]] = Shop(
                 r["id"], r["label"], r["icon"], r["style"], r["html"], r["plain"], r["media_id"],
                 bool(r["verified"]), r["position"], bool(r["is_active"]),
-                search_key=f"{r['label']}\n{r['plain']}".casefold(),
+                keywords=r["keywords"],
+                search_key=f"{r['label']}\n{r['plain']}\n{r['keywords']}".casefold(),
             )
         for r in await db.fetchall("SELECT shop_id, tag_id, expires_at FROM shop_tags"):
             if r["shop_id"] in shops and r["tag_id"] in self.tags:

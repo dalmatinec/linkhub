@@ -332,7 +332,9 @@ def test_moderator_permissions(tmp_path):
         await h.send(OWNER, "77")
         assert h.app.catalog.admins[77] == {"shops"}
         await h.send(77, "/admin")
-        assert [r for r in h.labels(77)] == [["🏪 Магазины"]]
+        assert [r for r in h.labels(77)] == [["🏪 Магазины"], ["⚙️ Настройки каталога"]]
+        await h.click(77, "a:cfg")
+        assert h.labels(77)[0] == ["🔍 Похожие слова"], "из настроек только словарь поиска"
         await h.click(77, "a:users")
         assert "Нет доступа" in h.screen(77).text
         await h.stop()
@@ -638,6 +640,32 @@ def test_smart_search(tmp_path):
         await h.send(USER, "vpn алматы до 5000")
         text = h.screen(USER).text
         assert "Алматы" in text and "≤ 5000" in text and h.labels(USER)[0] == ["Gift Shop"]
+    run(scenario())
+
+
+def test_hidden_keywords_and_synonyms(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop = await make_shop(h, "Gift Shop")
+        from bot import search
+        names = lambda q: [s.label for s in search.run(h.app.catalog, q)[0]]  # noqa: E731
+        assert names("мишка") == []
+        await h.click(OWNER, f"x:skw:{shop}")
+        await h.send(OWNER, "мишка, розы,  мишка")
+        assert h.app.catalog.shops[shop].keywords == "мишка, розы"
+        assert "Слова для поиска" in h.screen(OWNER).text
+        assert names("мишки") == ["Gift Shop"], "скрытое слово по основе"
+        await h.click(OWNER, f"x:skw:{shop}")
+        await h.send(OWNER, "-")
+        assert names("мишка") == []
+
+        await h.click(OWNER, "x:synset")
+        await h.send(OWNER, "-")
+        assert names("вэпээн") == []
+        await h.click(OWNER, "x:synset")
+        await h.send(OWNER, "вэпээн, vpn\nодно")
+        assert h.app.catalog.setting("search_synonyms") == [["вэпээн", "vpn"]]
+        assert names("вэпээн") == ["Gift Shop"], "похожее слово ведёт на категорию VPN"
     run(scenario())
 
 
