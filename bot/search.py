@@ -59,33 +59,18 @@ def stem(word: str) -> str:
     return word
 
 
-_LAT = [("sch", "щ"), ("sh", "ш"), ("ch", "ч"), ("zh", "ж"), ("kh", "х"), ("ts", "ц"), ("ya", "я"), ("yu", "ю"),
-        ("yo", "е"), ("a", "а"), ("b", "б"), ("c", "к"), ("d", "д"), ("e", "е"), ("f", "ф"), ("g", "г"), ("h", "х"),
-        ("i", "и"), ("j", "дж"), ("k", "к"), ("l", "л"), ("m", "м"), ("n", "н"), ("o", "о"), ("p", "п"), ("q", "к"),
-        ("r", "р"), ("s", "с"), ("t", "т"), ("u", "у"), ("v", "в"), ("w", "в"), ("x", "кс"), ("y", "й"), ("z", "з")]
-_CYR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k",
-        "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h",
-        "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-        "қ": "k", "ғ": "g", "ү": "u", "ұ": "u", "ө": "o", "ә": "a", "і": "i", "ң": "n", "һ": "h"}
+_VOWELS = re.compile(r"(?<=.)[аеиоуыэюяaeiouy]")
 
 
-def translit(word: str) -> str:
-    """Латиница ↔ кирилица по звучанию: «hsh» → «хш», «ст» → «st». Смешанное слово не трогаем."""
-    if re.fullmatch(r"[a-z0-9 ]+", word):
-        out, i = [], 0
-        while i < len(word):
-            for lat, cyr in _LAT:
-                if word.startswith(lat, i):
-                    out.append(cyr)
-                    i += len(lat)
-                    break
-            else:
-                out.append(word[i])
-                i += 1
-        return "".join(out)
-    if re.fullmatch(r"[а-яёқғүұөәіңһ0-9 ]+", word):
-        return "".join(_CYR.get(ch, ch) for ch in word.replace("ё", "е"))
-    return word
+def skeleton(word: str) -> str:
+    """Слово без гласных (кроме первой буквы): «хаш», «хеш», «хэш» → «хш», «hash» → «hsh», «sort» → «srt».
+    Так одно написание кода или названия покрывает все похожие. Латиница и кириллица не смешиваются."""
+    return _VOWELS.sub("", word.casefold().replace("ё", "е"))
+
+
+def _same_code(token: str, name: str) -> bool:
+    """Совпадение по согласным, только для слов от 3 букв: «ds» и «дус» так не склеятся."""
+    return len(token) >= 3 and len(name) >= 3 and " " not in name and skeleton(token) == skeleton(name)
 
 
 def _names(label: str) -> str:
@@ -164,13 +149,9 @@ def parse(cat: Catalog, text: str) -> Query:
         return out
 
     cities = names("city", [c for c in cat.cities.values() if c.is_active])
-    # категория узнаётся по названию, по «как ещё пишут» и по тем же словам в другой раскладке букв
-    categories = []
-    for c in cat.active_categories:
-        for word in [c.label, *c.words.split(",")]:
-            name = _names(word)
-            if name:
-                categories += [(c.id, name), (c.id, translit(name))]
+    # категория узнаётся по названию и по «как ещё пишут», регистр и гласные не важны
+    categories = [(c.id, name) for c in cat.active_categories
+                  for name in (_names(w) for w in [c.label, *c.words.split(",")]) if name]
     tags = names("tag", cat.tags.values())
 
     tokens = WORD_RE.findall(text)
@@ -187,13 +168,18 @@ def parse(cat: Catalog, text: str) -> Query:
                     i += 1
                     hit = True
                     break
+                if target is q.categories:  # одно слово может подходить к нескольким категориям: берём все
+                    if any(_matches_name(v, name) or _same_code(v, name) for v in variants):
+                        target.add(obj_id)
+                        hit = True
+                    continue
                 if any(_matches_name(v, name) for v in variants):
                     target.add(obj_id)
-                    if target is q.categories:
-                        q.category_stems.extend(v for v in variants)
                     hit = True
                     break
             if hit:
+                if target is q.categories:
+                    q.category_stems.extend(variants)
                 break
         if not hit and tok not in STOP_WORDS and not tok.isdigit():
             q.words.append(tok)
@@ -207,7 +193,7 @@ def _mentions(key: str, words: list[str]) -> bool:
     for w in words:
         if len(w) <= 3:
             tokens = tokens if tokens is not None else set(WORD_RE.findall(key))
-            if w in tokens or translit(w) in tokens:
+            if w in tokens:
                 return True
         elif stem(w) in key:
             return True
@@ -219,7 +205,8 @@ def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
     if not q.words and not q.has_filters:
         return [], q
     # каждое слово запроса — группа вариантов: само слово и его синонимы из словаря
-    stems = [[stem(v) for v in synonyms(cat, w)] for w in q.words]
+    groups = [synonyms(cat, w) for w in q.words]
+    stems = [[stem(v) for v in group] for group in groups]
     scored: list[tuple[int, Shop]] = []
     for shop in cat.all_shops:
         if q.cities and not (shop.cities & q.cities):
@@ -237,7 +224,7 @@ def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
                 continue
             if q.price_min is not None and max(prices) < q.price_min:
                 continue
-        if not all(any(s in key for s in group) for group in stems):
+        if not all(_mentions(key, group) for group in groups):
             continue
         name = _names(shop.label)
         score = sum(2 for group in stems if any(s in name for s in group))  # совпадение в названии — выше

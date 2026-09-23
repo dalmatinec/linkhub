@@ -574,7 +574,7 @@ async def view_shop_categories(ctx: Ctx, shop_id: str) -> ViewResult:
 async def act_shop_category_new(ctx: Ctx, shop_id: str):
     return await ctx.ask("scatnew", "Отправьте название новой категории. Можно несколько, каждую с новой строки. "
                                     "Через запятую после названия можно написать, как ещё её ищут:\n"
-                                    "<code>HSH, хш</code>\nНовые категории сразу отметятся у этого магазина.",
+                                    "<code>HSH, хэш, гаш</code>\nНовые категории сразу отметятся у этого магазина.",
                          f"a:scats:{shop_id}", shop_id)
 
 

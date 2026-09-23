@@ -666,9 +666,9 @@ def test_categories_as_search_words(tmp_path):
         shop = max(h.app.catalog.shops)
         assert "отметьте, какие товары" in h.screen(OWNER).text, "после создания сразу галочки категорий"
         await h.click(OWNER, f"x:scatnew:{shop}")
-        await h.send(OWNER, "HSH\nST, стафф")
+        await h.send(OWNER, "HSH, хэш, гаш, сорт\nST, стафф, сорт\nDS, дус")
         cats = {c.label: c for c in h.app.catalog.categories.values()}
-        assert cats["ST"].words == "стафф" and cats["ST"].id in h.app.catalog.shops[shop].categories
+        assert cats["ST"].words == "стафф, сорт" and cats["ST"].id in h.app.catalog.shops[shop].categories
         await h.click(OWNER, f"x:htm:shop:{shop}")
         await h.send(OWNER, "Стоимость по запросу")
         await h.click(OWNER, f"x:sact:{shop}")
@@ -678,10 +678,15 @@ def test_categories_as_search_words(tmp_path):
 
         from bot import search
         names = lambda q: sorted(s.label for s in search.run(h.app.catalog, q)[0])  # noqa: E731
-        assert names("hsh") == ["Codes Shop"]
-        assert names("ХШ") == ["Codes Shop"], "латиница и кириллица сами"
-        assert names("st") == names("ст") == ["Codes Shop"], "короткий код не ищется внутри слов"
+        assert names("HsH") == names("hash") == ["Codes Shop"], "регистр и гласные не важны"
+        assert names("хаш") == names("ХЕШ") == names("гаш") == ["Codes Shop"]
+        assert names("st") == ["Codes Shop"]
+        assert names("ст") == [], "ст это не ST и не часть слова стоимость"
+        assert names("дус") == names("ds") == ["Codes Shop"]
+        assert names("дс") == [], "ds не угадывается как дс"
         assert names("стафф") == ["Codes Shop", "Other Shop"], "другое написание и слово в тексте"
+        q = search.parse(h.app.catalog, "сорт алматы до 5000")
+        assert q.categories == {cats["ST"].id, cats["HSH"].id} and q.price_max == 5000 and q.cities
 
         await h.send(USER, "/start")
         assert not any("Категории" in label for row in h.labels(USER) for label in row)
