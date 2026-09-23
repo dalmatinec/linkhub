@@ -451,6 +451,21 @@ async def in_media(ctx: Ctx, message: Message, kind: str, key: str):
     return TARGETS[kind][2].format(key)
 
 
+@action("mkind")
+async def act_media_kind(ctx: Ctx, kind: str, key: str):
+    """Видео ↔ GIF: GIF в Telegram крутится сам по кругу, но без звука."""
+    await _check_target_perm(ctx, kind)
+    row = await fetch_target(ctx, kind, key)
+    m = ctx.app.media.get(row["media_id"])
+    if m and m.kind in ("video", "animation"):
+        new = "animation" if m.kind == "video" else "video"
+        await ctx.app.media.set_kind(m.id, new)
+        ctx.notice = ("✅ Теперь это GIF: воспроизводится сам, по кругу, без звука." if new == "animation"
+                      else "✅ Теперь это видео со звуком: запускается нажатием (или само — если так настроено "
+                           "у пользователя в Telegram).")
+    return TARGETS[kind][2].format(key)
+
+
 @action("nomed")
 async def act_no_media(ctx: Ctx, kind: str, key: str):
     await _check_target_perm(ctx, kind)
@@ -459,7 +474,7 @@ async def act_no_media(ctx: Ctx, kind: str, key: str):
     return TARGETS[kind][2].format(key)
 
 
-def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool = True) -> Rows:
+def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool = True, app: App | None = None) -> Rows:
     """Стандартные кнопки редактирования: текст кнопки, цвет, иконка, текст экрана, медиа."""
     rows: Rows = []
     if label:
@@ -474,6 +489,11 @@ def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool
              b("🖼 Медиа", f"x:med:{kind}:{key}")]
         rows.append(r)
         if row["media_id"]:
+            m = app.media.get(row["media_id"]) if app else None
+            if m and m.kind in ("video", "animation") and m.path.suffix == ".mp4":
+                rows.append([b("🔁 Сделать GIF: автовоспроизведение без звука" if m.kind == "video"
+                               else "🔊 Сделать видео со звуком (без автовоспроизведения)",
+                               f"x:mkind:{kind}:{key}")])
             rows.append([b("✖️ Убрать медиа", f"x:nomed:{kind}:{key}")])
     if kind in TR_FIELDS:
         rows.append([b("🌐 Перевод на другие языки", f"a:trl:{kind}:{key}")])

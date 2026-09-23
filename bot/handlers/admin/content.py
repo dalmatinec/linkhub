@@ -131,7 +131,7 @@ async def view_text(ctx: Ctx, key: str) -> ViewResult:
             f"<i>{where}</i>\n{subs_line}"
             f"Медиа: {media_line(app, row['media_id'])}\n\n"
             f"<b>Сейчас так:</b>\n\n{row['html'] or '<i>пусто</i>'}")
-    rows = editor_rows("text", key, row, label=False, rich=True)
+    rows = editor_rows("text", key, row, label=False, rich=True, app=app)
     if key not in MEDIA_TEXTS:  # медиа уместно только у экранов
         rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")],
                 [b("🌐 Перевод на другие языки", f"a:trl:text:{key}")]]

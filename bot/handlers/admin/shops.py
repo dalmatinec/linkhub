@@ -131,7 +131,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         f"<b>Текст карточки:</b>\n{snippet(shop.html, 400)}"
     )
     sid = shop.id
-    rows: Rows = editor_rows("shop", str(sid), row)
+    rows: Rows = editor_rows("shop", str(sid), row, app=app)
     rows.append([b("📞 Контакты", f"a:cont:{sid}"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
     rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
                  b("🗂 Категории", f"a:scats:{sid}")])

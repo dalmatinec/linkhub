@@ -568,3 +568,23 @@ def test_row_arrows_move_one_step(tmp_path):
         await h.click(OWNER, f"x:irow:{top.id}:-1")  # уже в самом верху
         assert "самом верху" in h.screen(OWNER).text
     run(scenario())
+
+
+def test_video_as_gif_autoplay(tmp_path):
+    async def scenario():
+        from aiogram.methods import SendAnimation
+        h = await Harness(tmp_path).start()
+        root = h.app.catalog.root_id
+        h.tg.download_data = b"mp4"
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, f"x:med:item:{root}")
+        await h.send(OWNER, None, video={"file_id": "v", "file_unique_id": "v", "width": 1, "height": 1,
+                                         "duration": 3, "mime_type": "video/mp4"})
+        assert "Сделать GIF" in str(h.labels(OWNER))
+        await h.click(OWNER, f"x:mkind:item:{root}")
+        assert "Теперь это GIF" in h.screen(OWNER).text
+        await h.send(USER, "/start")
+        sent = [c for c in h.tg.calls if isinstance(c, SendAnimation)]
+        assert sent and isinstance(sent[-1].animation, FSInputFile), "перезалито как GIF"
+        assert h.screen(USER).kind == "animation"
+    run(scenario())

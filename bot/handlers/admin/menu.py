@@ -71,7 +71,7 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
             by_row.setdefault(child.row, []).append(b(item_title(child), f"a:item:{child.id}"))
         rows.extend(by_row[r] for r in sorted(by_row))
         rows.append([b("➕ Добавить кнопку", f"a:inew:{sid}", "success")])
-    rows.extend(editor_rows("item", sid, row, label=not is_root, rich=item.kind != "url"))
+    rows.extend(editor_rows("item", sid, row, label=not is_root, rich=item.kind != "url", app=app))
     if item.kind == "tag":
         rows.append([b("🏷 Сменить метку", f"x:itag:{sid}")])
     if item.kind == "url":

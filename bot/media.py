@@ -212,6 +212,14 @@ class MediaStore:
             await asyncio.sleep(0.4)
         return ok, failed
 
+    async def set_kind(self, media_id: int, kind: str) -> None:
+        """Сменить способ отправки (видео ↔ GIF). Старые file_id другого типа не подойдут — сбрасываем."""
+        m = self.files[media_id]
+        m.kind = kind
+        self.file_ids.pop(media_id, None)
+        await self.db.execute("UPDATE media SET kind = ? WHERE id = ?", (kind, media_id))
+        await self.db.execute("DELETE FROM media_file_ids WHERE media_id = ?", (media_id,))
+
     async def collect_garbage(self) -> int:
         """Удаляет медиа, на которые больше ничего не ссылается."""
         rows = await self.db.fetchall(
