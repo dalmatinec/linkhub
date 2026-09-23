@@ -271,7 +271,8 @@ class Catalog:
     def languages(self) -> dict[str, str]:
         """Включённые языки: код -> название. Базовый всегда первый."""
         names = self.setting("languages", {"ru": "Русский"})
-        enabled = self.setting("enabled_langs", [self.base_lang])
+        # казахский и английский пока выключены целиком; переводы в базе сохраняются
+        enabled = self.setting("enabled_langs", [self.base_lang]) if self.setting("multilang", 0) else []
         codes = [self.base_lang] + [c for c in enabled if c != self.base_lang and c in names]
         return {c: names.get(c, c) for c in codes}
 

@@ -132,19 +132,49 @@ async def view_banned(ctx: Ctx, page: str = "0") -> ViewResult:
 
 
 # ---------- админы ----------
+def _perm_names(perms: set[str]) -> str:
+    if "*" in perms:
+        return "все права"
+    return ", ".join(PERMS[p].split(" ", 1)[1] for p in PERMS if p in perms) or "без прав"
+
+
+async def _admin_list(app: App) -> list[tuple[int, str, set[str]]]:
+    """Админы без владельцев из конфига: (id, имя, права)."""
+    ids = [uid for uid in app.catalog.admins if uid not in app.config.owner_ids]
+    users = {r["id"]: r for r in await app.db.fetchall(
+        f"SELECT id, first_name, username FROM users WHERE id IN ({','.join('?' * len(ids))})", ids)} if ids else {}
+    out = []
+    for uid in ids:
+        u = users.get(uid)
+        name = (u["first_name"] or "") if u else ""
+        if u and u["username"]:
+            name = f"{name} @{u['username']}".strip()
+        out.append((uid, name or "ещё не заходил в бота", app.catalog.admins[uid]))
+    return out
+
+
 @view("admins", "admins")
 async def view_admins(ctx: Ctx) -> ViewResult:
-    app = ctx.app
-    rows: Rows = [[button(f"👑 {uid}", cb="noop")] for uid in sorted(app.config.owner_ids)]
-    names = {r["id"]: r["first_name"] for r in await app.db.fetchall("SELECT id, first_name FROM users WHERE id IN "
-                                                                       "(SELECT user_id FROM admins)")}
-    for uid, perms in app.catalog.admins.items():
-        rows.append([b(f"👮 {names.get(uid) or uid} · прав: {len(perms)}", f"a:adm:{uid}")])
-    rows.append([b("➕ Добавить админа", "x:adnew", "success")])
+    admins = await _admin_list(ctx.app)
+    lines = [f"{i}. {escape(name)}\n<code>{uid}</code> · {escape(_perm_names(perms))}"
+             for i, (uid, name, perms) in enumerate(admins, 1)]
+    html = f"👮 <b>Админы</b>: {len(admins)}\n\n" + ("\n\n".join(lines) or "Пока никого. Нажмите ➕ Добавить.")
+    rows: Rows = [[b("➕ Добавить", "x:adnew", "success")]]
+    if admins:
+        rows[0].append(b("✏️ Права или удалить", "a:adpick"))
     rows.append(back_btn("a:cfg"))
-    html = ("👮 <b>Админы</b>\n\n👑 Владельцы из .env, у них все права.\n"
-            "Остальным права выдаются галочками по разделам.")
     return html, rows
+
+
+@view("adpick", "admins")
+async def view_admin_pick(ctx: Ctx) -> ViewResult:
+    admins = await _admin_list(ctx.app)
+    if len(admins) == 1:
+        return await view_admin(ctx, str(admins[0][0]))
+    rows = grid([b(name if name != "ещё не заходил в бота" else str(uid), f"a:adm:{uid}")
+                 for uid, name, _ in admins], 2)
+    rows.append(back_btn("a:admins"))
+    return "Кого изменить?", rows
 
 
 @action("adnew", "admins")
@@ -175,10 +205,11 @@ async def view_admin(ctx: Ctx, user_id: str) -> ViewResult:
     perms = ctx.app.catalog.admins.get(int(user_id))
     if perms is None:
         return await view_admins(ctx)
+    name = next((n for uid, n, _ in await _admin_list(ctx.app) if uid == int(user_id)), "")
     rows = grid([b(f"{'✅' if key in perms else '▫️'} {title}", f"x:adp:{user_id}:{key}") for key, title in PERMS.items()], 2)
-    rows.append([b("🗑 Снять с админов", f"x:addel:{user_id}", "danger")])
+    rows.append([b("🗑 Удалить из админов", f"x:addel:{user_id}", "danger")])
     rows.append(back_btn("a:admins"))
-    return f"👮 <b>Права админа</b> <code>{user_id}</code>\nАдминка открывается командой /admin", rows
+    return f"👮 <b>{escape(name)}</b> <code>{user_id}</code>\nОтметьте, какие разделы ему открыть.", rows
 
 
 @action("adp", "admins")

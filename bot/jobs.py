@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 FLUSH_EVERY = 30
 MAINTENANCE_EVERY = 300
 EVENTS_KEEP_DAYS = 180
+LOG_KEEP_DAYS = 90  # журнал действий админов
 SEND_LIMIT = 49 * 1024 * 1024  # бот может отправить файл до 50 МБ
 
 
@@ -89,7 +90,11 @@ async def daily_backup(app: App) -> None:
     await app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('last_backup_day', ?)", (json.dumps(today),))
     cat.settings["last_backup_day"] = today
     await app.db.execute("DELETE FROM events WHERE ts < ?", (now() - EVENTS_KEEP_DAYS * 86400,))
+    await app.db.execute("DELETE FROM admin_log WHERE ts < ?", (now() - LOG_KEEP_DAYS * 86400,))
     await send_backup(app, None, caption="💾 Ежедневный бэкап")
+    removed = await app.media.collect_garbage()  # картинки, которые уже нигде не стоят (они есть в бэкапе)
+    if removed:
+        log.info("Удалено неиспользуемых медиа: %s", removed)
 
 
 async def send_backup(app: App, chat_id: int | None, caption: str) -> str:

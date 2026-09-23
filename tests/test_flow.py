@@ -139,7 +139,7 @@ def test_user_navigation(tmp_path):
         assert "Шымкент" in h.screen(USER).text and "нет магазинов" in h.screen(USER).text
         await h.press(USER, "Назад")
         await h.press(USER, "Ещё")
-        assert h.labels(USER) == [["📝 Разместить магазин"], ["🌐 Язык"], ["◀️ Назад"]]
+        assert h.labels(USER) == [["📝 Разместить магазин"], ["◀️ Назад"]], "языки пока выключены"
 
         await h.send(USER, "/start")
         assert len(h.tg.chat(USER)) == 1, "в чате всегда один экран"
@@ -437,6 +437,8 @@ def test_application_flow(tmp_path):
 def test_languages_and_translation_file(tmp_path):
     async def scenario():
         h = await Harness(tmp_path).start()
+        await h.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('multilang', '1')")
+        await h.app.catalog.reload()  # языки пока выключены, здесь включаем их вручную
         KK = 55
         await h.feed(message={"message_id": 1, "date": 0, "chat": {"id": KK, "type": "private"},
                               "from": {**h._user(KK), "language_code": "kk"}, "text": "/start",
@@ -727,7 +729,7 @@ def test_existing_install_gets_new_layout_and_texts(tmp_path):
         await h2.send(USER, "/start")
         assert h2.labels(USER)[1] == ["Алматы", "Астана"] and h2.labels(USER)[-1] == ["☰ Ещё"]
         await h2.press(USER, "Ещё")
-        assert h2.labels(USER)[:2] == [["📝 Разместить магазин"], ["🌐 Язык"]]
+        assert h2.labels(USER)[:2] == [["📝 Разместить магазин"], ["◀️ Назад"]], "язык в меню Ещё, он пока скрыт"
     run(scenario())
 
 
@@ -752,17 +754,18 @@ def test_other_cities_list_shops(tmp_path):
 
 
 def test_operator_button_easy_change(tmp_path):
-    """У продавца несколько кнопок связи, каждая меняется прямо с экрана магазина."""
+    """У продавца несколько кнопок связи, все видны на экране Контакты и меняются в пару нажатий."""
     async def scenario():
         h = await Harness(tmp_path).start()
         shop_id = await make_shop(h)  # «💬 Написать | @gift_manager», «Канал | t.me/gifts»
         await h.click(OWNER, f"a:shop:{shop_id}")
+        await h.press(OWNER, "Контакты (2)")
+        assert "Пишу вам из Круиза" in h.screen(OWNER).text, "приветствие видно рядом с контактами"
         assert h.find(OWNER, "💬 Написать → @gift_manager") and h.find(OWNER, "Канал → @gifts")
         await h.press(OWNER, "Написать → @gift_manager")
         await h.press(OWNER, "Сменить контакт")
         await h.send(OWNER, "@new_seller")
-        await h.click(OWNER, f"a:shop:{shop_id}")
-        await h.press(OWNER, "Добавить контакт")
+        await h.press(OWNER, "Добавить")
         await h.send(OWNER, "@second_seller")
         urls = [c.url for c in h.app.catalog.shops[shop_id].contacts]
         assert urls == ["https://t.me/new_seller", "https://t.me/gifts", "https://t.me/second_seller"]
@@ -819,4 +822,31 @@ def test_texts_grouped_by_topic(tmp_path):
         await h.press(OWNER, "Приветствие оператору")
         await h.press(OWNER, "Назад")
         assert "Карточка магазина" in h.screen(OWNER).text, "назад ведёт в ту же тему"
+    run(scenario())
+
+
+def test_admin_screens_simple(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)
+        await h.click(OWNER, f"a:smore:{shop_id}")
+        assert h.find(OWNER, "Удалить магазин") and h.find(OWNER, "Слова для поиска")
+        await h.click(OWNER, "a:cfg")
+        assert all("Языки" not in label for row in h.labels(OWNER) for label in row)
+        await h.press(OWNER, "Приветствие оператору")
+        await h.press(OWNER, "Изменить текст")
+        await h.send(OWNER, "-")
+        assert h.app.catalog.text("contact_greeting").html == ""
+        await h.send(USER, f"/start shop_{shop_id}")
+        assert "?text=" not in h.find(USER, "💬 Написать").url, "приветствие выключено"
+
+        await h.send(77, "/start")
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "x:adnew")
+        await h.send(OWNER, "77")
+        await h.click(OWNER, "a:admins")
+        text = h.screen(OWNER).text
+        assert "U77" in text and "<code>77</code>" in text and f"<code>{OWNER}</code>" not in text, "владелец из конфига не показан"
+        await h.click(OWNER, "a:stats")
+        assert "Популярные за месяц" in h.screen(OWNER).text
     run(scenario())

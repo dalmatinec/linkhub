@@ -10,8 +10,8 @@ from ...richtext import normalize_url, parse_contacts, parse_label
 from ...ui import button, grid, paginate
 from ..user import screen_card
 from .core import (
-    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_rows, icon_line, media_line, move, on_input,
-    snippet, view,
+    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_extras, icon_line, media_line, move, on_input,
+    style_name, view,
 )
 
 P = "shops"
@@ -119,7 +119,6 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     if shop is None:
         ctx.notice = "Магазин не найден."
         return await view_shops(ctx)
-    row = await app.db.fetchone("SELECT * FROM shops WHERE id = ?", (shop.id,))
     tz = int(cat.setting("tz_offset", 5))
     tags = ", ".join(f"{cat.tags[t].label} ({fmt_date(exp, tz)})" for t, exp in shop.tags.items()) or "нет"
     cities = ", ".join(cat.cities[c].label for c in shop.cities if c in cat.cities) or "нет"
@@ -129,38 +128,50 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     month = await app.db.fetchval(
         "SELECT COUNT(*) FROM events WHERE shop_id = ? AND ts > ?", (shop.id, now() - 30 * 86400))
     link = f"https://t.me/{app.bot_username}?start=shop_{shop.id}" if app.bot_username else "появится после запуска"
+    contacts = ", ".join(c.url.replace("https://t.me/", "@") for c in shop.contacts) or "не задан"
     html = (
-        f"🏪 <b>{escape(shop.label)}</b>  <code>#{shop.id}</code>\n"
-        f"Статус: {'✅ опубликован' if shop.is_active else '🙈 скрыт'}\n"
-        f"Проверенный: {'✅ да' if shop.verified else 'нет'}\n"
-        f"Иконка кнопки: {icon_line(shop.icon)}\n"
-        f"Метки: {escape(tags)}\n"
-        f"Города: {escape(cities)}\n"
-        f"Категории: {escape(categories)}\n"
-        f"Слова для поиска: {escape(shop.keywords) or 'нет'}\n"
-        f"Контакт: {escape(', '.join(c.url.replace('https://t.me/', '@') for c in shop.contacts) or 'не задан')}\n"
-        f"Медиа: {media_line(app, shop.media_id)}\n"
-        f"Просмотры: за 7 дней <b>{week}</b>, за 30 дней <b>{month}</b>\n"
-        f"Ссылка: {escape(link)}\n\n"
-        f"<b>Текст карточки:</b>\n{snippet(shop.html, 400)}"
+        f"🏪 <b>{escape(shop.label)}</b> · {'✅ опубликован' if shop.is_active else '🙈 скрыт'}"
+        f"{' · ☑️ проверенный' if shop.verified else ''}\n\n"
+        f"🏷 {escape(tags)}\n"
+        f"🏙 {escape(cities)}\n"
+        f"🗂 {escape(categories)}\n"
+        f"👤 {escape(contacts)}\n"
+        f"👁 Просмотры: неделя <b>{week}</b>, месяц <b>{month}</b>\n"
+        f"🔗 {escape(link)}"
     )
     sid = shop.id
-    rows: Rows = editor_rows("shop", str(sid), row, app=app)
-    # все кнопки связи продавца прямо здесь: нажал — сменил ник, подпись или удалил
-    for c in shop.contacts:
-        rows.append([b(f"👤 {c.label} → {c.url.replace('https://t.me/', '@')}", f"a:cont1:{sid}:{c.id}", "primary")])
-    rows.append([b("➕ Добавить контакт", f"x:cadd:{sid}", "success"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
-    rows.append([b("🔑 Слова для поиска", f"x:skw:{sid}")])
-    rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
-                 b("🗂 Категории", f"a:scats:{sid}")])
-    rows.append([
-        b("✅ Проверенный" if not shop.verified else "✖️ Снять отметку Проверенный", f"x:sver:{sid}"),
-        b("👁 Опубликовать" if not shop.is_active else "🙈 Скрыть", f"x:sact:{sid}",
-          "success" if not shop.is_active else None),
-    ])
-    rows.append([b("⬆️ Выше", f"x:smv:{sid}:-1"), b("⬇️ Ниже", f"x:smv:{sid}:1")])
-    rows.append([b("🗑 Удалить", f"a:sdel:{sid}", "danger")])
-    rows.append(back_btn("a:shops:0", "◀️ К списку"))
+    rows: Rows = [
+        [b("✏️ Название", f"x:lbl:shop:{sid}"), b("📝 Текст карточки", f"x:htm:shop:{sid}")],
+        [b("🖼 Картинка", f"x:med:shop:{sid}"), b(f"👤 Контакты ({len(shop.contacts)})", f"a:cont:{sid}")],
+        [b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"), b("🗂 Категории", f"a:scats:{sid}")],
+        [b("👀 Предпросмотр", f"x:sprev:{sid}"),
+         b("👁 Опубликовать" if not shop.is_active else "🙈 Скрыть", f"x:sact:{sid}",
+           "success" if not shop.is_active else None)],
+        [b("⚙️ Ещё", f"a:smore:{sid}")],
+        back_btn("a:shops:0", "◀️ К списку"),
+    ]
+    return html, rows
+
+
+@view("smore", P)
+async def view_shop_more(ctx: Ctx, shop_id: str) -> ViewResult:
+    app = ctx.app
+    shop = app.catalog.shops.get(int(shop_id))
+    if shop is None:
+        return await view_shops(ctx)
+    row = await app.db.fetchone("SELECT * FROM shops WHERE id = ?", (shop.id,))
+    sid = shop.id
+    html = (f"⚙️ <b>{escape(shop.label)}</b>, редкие настройки\n\n"
+            f"Иконка кнопки: {icon_line(shop.icon)}\n"
+            f"Картинка: {media_line(app, shop.media_id)}\n"
+            f"Слова для поиска: {escape(shop.keywords) or 'нет'}")
+    rows: Rows = [[b(f"🎨 Цвет кнопки: {style_name(row['style'])}", f"a:col:shop:{sid}")]]
+    rows += editor_extras("shop", str(sid), row, app=app)
+    rows.append([b("☑️ Проверенный" if not shop.verified else "✖️ Снять Проверенный", f"x:sver:{sid}"),
+                 b("🔑 Слова для поиска", f"x:skw:{sid}")])
+    rows.append([b("⬆️ Выше в списках", f"x:smv:{sid}:-1"), b("⬇️ Ниже", f"x:smv:{sid}:1")])
+    rows.append([b("🗑 Удалить магазин", f"a:sdel:{sid}", "danger")])
+    rows.append(back_btn(f"a:shop:{sid}"))
     return html, rows
 
 
@@ -273,17 +284,19 @@ async def view_contacts(ctx: Ctx, shop_id: str) -> ViewResult:
     shop = ctx.app.catalog.shops.get(int(shop_id))
     if shop is None:
         return await view_shops(ctx)
-    lines = [f"👤 <b>Кнопки связи: {escape(shop.label)}</b>\n"]
-    if shop.contacts:
-        lines.append("Так они выглядят в карточке. Нажмите на кнопку, чтобы сменить оператора, "
-                     "поменять подпись или удалить её.")
-    else:
-        lines.append("Кнопок пока нет. Нажмите ➕ Добавить контакт и отправьте ник продавца.")
-    rows: Rows = [[b(c.label, f"a:cont1:{shop_id}:{c.id}")] for c in shop.contacts]
-    rows.append([b("➕ Добавить контакт", f"x:cadd:{shop_id}", "success")])
-    rows.append([b("📋 Заменить все кнопки списком", f"x:cset:{shop_id}")])
+    greeting = ctx.app.catalog.text("contact_greeting").html
+    html = (f"👤 <b>Контакты: {escape(shop.label)}</b>\n"
+            + ("Нажмите на контакт, чтобы сменить его или удалить." if shop.contacts
+               else "Пока пусто. Нажмите ➕ Добавить и отправьте ник оператора.")
+            + f"\n\n💬 Приветствие, которое вписывается человеку при нажатии:\n<i>{greeting or 'выключено'}</i>")
+    rows: Rows = [[b(f"{c.label} → {c.url.replace('https://t.me/', '@')}", f"a:cont1:{shop_id}:{c.id}", "primary")]
+                  for c in shop.contacts]
+    rows.append([b("➕ Добавить", f"x:cadd:{shop_id}", "success")])
+    perms = ctx.app.perms(ctx.user_id) or set()
+    if "*" in perms or "texts" in perms:
+        rows.append([b("💬 Изменить приветствие", "a:text:contact_greeting")])
     rows.append(back_btn(f"a:shop:{shop_id}"))
-    return "\n".join(lines), rows
+    return html, rows
 
 
 @view("cont1", P)
@@ -292,22 +305,20 @@ async def view_contact(ctx: Ctx, shop_id: str, contact_id: str) -> ViewResult:
     c = _contact(shop, contact_id) if shop else None
     if c is None:
         return await view_contacts(ctx, shop_id)
-    html = (f"👤 <b>{escape(c.label)}</b>\n"
-            f"Ведёт на: {escape(c.url)}\n\n"
-            "Контакт сменился? Нажмите 🔄 Сменить контакт и отправьте новый ник.")
+    html = f"👤 <b>{escape(c.label)}</b>\n{escape(c.url)}"
     rows: Rows = [
         [b("🔄 Сменить контакт", f"x:clink:{shop_id}:{c.id}", "primary")],
         [b("✏️ Подпись кнопки", f"x:clabel:{shop_id}:{c.id}")],
         [b("⬆️ Выше", f"x:cmove:{shop_id}:{c.id}:-1"), b("⬇️ Ниже", f"x:cmove:{shop_id}:{c.id}:1")],
         [b("🗑 Удалить кнопку", f"x:ctdel:{shop_id}:{c.id}", "danger")],
-        back_btn(f"a:shop:{shop_id}"),
+        back_btn(f"a:cont:{shop_id}"),
     ]
     return html, rows
 
 
 @action("cadd", P)
 async def act_contact_add(ctx: Ctx, shop_id: str):
-    return await ctx.ask("cadd", "➕ <b>Новая кнопка связи</b>\n" + LINK_HELP, f"a:shop:{shop_id}", shop_id)
+    return await ctx.ask("cadd", "➕ <b>Новая кнопка связи</b>\n" + LINK_HELP, f"a:cont:{shop_id}", shop_id)
 
 
 @on_input("cadd", P)
@@ -324,7 +335,7 @@ async def in_contact_add(ctx: Ctx, message: Message, shop_id: str):
     await ctx.reload()
     await ctx.log("shop.contacts", shop_id)
     ctx.notice = "✅ Контакт добавлен."
-    return f"a:shop:{shop_id}"
+    return f"a:cont:{shop_id}"
 
 
 @action("clink", P)
@@ -343,7 +354,7 @@ async def in_contact_link(ctx: Ctx, message: Message, shop_id: str, contact_id: 
     await ctx.reload()
     await ctx.log("shop.contacts", shop_id)
     ctx.notice = "✅ Контакт сменён. Покупатели теперь будут писать на новый."
-    return f"a:shop:{shop_id}"
+    return f"a:cont:{shop_id}"
 
 
 @action("clabel", P)
@@ -376,7 +387,7 @@ async def act_contact_delete(ctx: Ctx, shop_id: str, contact_id: str):
     await ctx.reload()
     await ctx.log("shop.contacts", shop_id)
     ctx.notice = "🗑 Кнопка удалена."
-    return f"a:shop:{shop_id}"
+    return f"a:cont:{shop_id}"
 
 
 @action("cset", P)

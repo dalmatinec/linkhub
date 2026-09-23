@@ -45,19 +45,13 @@ async def view_protection(ctx: Ctx) -> ViewResult:
     s = ctx.app.catalog.setting
     rows = settings_rows(ctx, PROTECTION, "prot")
     rows.append([b(f"🧹 Удалять сообщения пользователей: {'да' if s('clean_chat', 1) else 'нет'}", "x:settog:clean_chat:prot")])
-    rows.append([b(f"🔒 Запрет пересылки и сохранения: {'да' if s('protect_content', 1) else 'нет'}",
+    rows.append([b(f"🔒 Запрет пересылки и скриншотов: {'да' if s('protect_content', 1) else 'нет'}",
                    "x:settog:protect_content:prot")])
     rows.append(back_btn("a:cfg"))
     html = ("🛡 <b>Защита</b>\n\n"
-            f"Антифлуд: если больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек, "
-            "бот просит не торопиться.\n"
-            f"После <b>{s('flood_strikes')}</b> таких нарушений подряд автобан на <b>{s('flood_ban_minutes')}</b> мин.\n"
-            "Забаненные и флудеры отсекаются до основной логики и не нагружают бота.\n\n"
-            "Удаление сообщений: всё, что пользователь пишет вне поиска и жалоб, удаляется, и в чате остаётся "
-            "только экран бота.\n\n"
-            "🔒 Запрет пересылки: покупатели не могут переслать, сохранить или сфотографировать экран бота. "
-            "На админов и модераторов запрет не действует, скриншоты можно делать всегда. Делиться магазином "
-            "можно кнопкой 📤 Поделиться, она отправляет ссылку на магазин в боте.")
+            f"Больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек: бот просит не спешить. "
+            f"После <b>{s('flood_strikes')}</b> раз бан на <b>{s('flood_ban_minutes')}</b> мин.\n"
+            "Запрет пересылки на админов не действует.")
     return html, rows
 
 
@@ -67,19 +61,12 @@ async def view_settings(ctx: Ctx) -> ViewResult:
     rows = settings_rows(ctx, SETTINGS, "set")
     log_chat = app.log_chat
     rows.insert(0, [b(f"📡 Канал логов и бэкапов: {log_chat or 'не задан'}", "x:logchat")])
-    rows.insert(1, [b(f"📜 Дублировать действия админов в канал: "
+    rows.insert(1, [b(f"📜 Действия админов в канал: "
                       f"{'да' if app.catalog.setting('log_admin_actions', 1) else 'нет'}",
                       "x:settog:log_admin_actions:set")])
-    rows.append([b(f"🔥 Прогреть медиа ({len(app.media.pending_warmup())} без file_id)", "x:warm"),
-                 b("🧹 Удалить лишние медиа", "x:gc")])
     rows.append(back_btn("a:cfg"))
-    total = sum(m.size for m in app.media.files.values()) / 1048576
     html = ("⚙️ <b>Настройки</b>\n\n"
-            "📡 <b>Канал логов</b>: один приватный канал, куда бот шлёт ошибки, бэкапы, новые заявки, жалобы, "
-            "автобаны и действия админов. Пока он не задан, бэкапы приходят владельцам в личку.\n\n"
-            f"Медиафайлов: <b>{len(app.media.files)}</b> ({total:.1f} МБ)\n"
-            "Прогрев заранее загружает все медиа в Telegram. Это нужно после смены токена, "
-            "но при запуске бот делает это и сам.")
+            "Канал логов: туда приходят бэкапы, заявки, жалобы и ошибки. Без него бэкапы идут владельцу в личку.")
     return html, rows
 
 
@@ -149,21 +136,6 @@ async def in_log_chat(ctx: Ctx, message: Message):
     return "a:set"
 
 
-@action("warm", "settings")
-async def act_warmup(ctx: Ctx):
-    await ctx.toast("Загружаю медиа, это может занять время…")
-    ok, failed = await ctx.app.media.warmup(ctx.app.bot, ctx.chat_id)
-    ctx.notice = f"🔥 Загружено: {ok}, ошибок: {failed}"
-    return "a:set"
-
-
-@action("gc", "settings")
-async def act_media_gc(ctx: Ctx):
-    removed = await ctx.app.media.collect_garbage()
-    ctx.notice = f"🧹 Удалено неиспользуемых файлов: {removed}"
-    return "a:set"
-
-
 # ---------- статистика ----------
 @view("stats", "stats")
 async def view_stats(ctx: Ctx) -> ViewResult:
@@ -174,23 +146,31 @@ async def view_stats(ctx: Ctx) -> ViewResult:
     async def count(sql: str, *params) -> int:
         return await db.fetchval(sql, params) or 0
 
-    views = [await count("SELECT COUNT(*) FROM events WHERE ts > ?", t - d * 86400) for d in (1, 7, 30)]
-    uniq = await count("SELECT COUNT(DISTINCT user_id) FROM events WHERE ts > ?", t - 7 * 86400)
+    day, week, month = t - 86400, t - 7 * 86400, t - 30 * 86400
+    views = [await count("SELECT COUNT(*) FROM events WHERE ts > ?", since) for since in (day, week, month)]
+    seen = [await count("SELECT COUNT(*) FROM users WHERE last_seen > ?", since) for since in (day, week, month)]
+    uniq = await count("SELECT COUNT(DISTINCT user_id) FROM events WHERE ts > ?", week)
     top = await db.fetchall(
-        "SELECT shop_id, COUNT(*) AS n FROM events WHERE ts > ? GROUP BY shop_id ORDER BY n DESC LIMIT 10",
-        (t - 30 * 86400,))
+        "SELECT shop_id, COUNT(*) AS n FROM events WHERE ts > ? GROUP BY shop_id ORDER BY n DESC LIMIT 10", (month,))
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
     top_lines = "\n".join(
-        f"{i}. {escape(cat.shops[r['shop_id']].label) if r['shop_id'] in cat.shops else '#' + str(r['shop_id'])}: {r['n']}"
-        for i, r in enumerate(top, 1)) or "пока нет данных"
-    tags = "\n".join(f"• {escape(tg.label)}: {len(cat.by_tag.get(tg.id, []))}" for tg in cat.tags.values())
+        f"{medals.get(i, f'{i}.')} {escape(cat.shops[r['shop_id']].label) if r['shop_id'] in cat.shops else '#' + str(r['shop_id'])}"
+        f" · <b>{r['n']}</b>"
+        for i, r in enumerate(top, 1)) or "пока нет просмотров"
+    tags = " · ".join(f"{escape(tg.label)}: <b>{len(cat.by_tag.get(tg.id, []))}</b>" for tg in cat.tags.values())
     html = (
         "📊 <b>Статистика</b>\n\n"
-        f"Пользователей: <b>{await count('SELECT COUNT(*) FROM users')}</b>, "
-        f"активны за сутки: <b>{await count('SELECT COUNT(*) FROM users WHERE last_seen > ?', t - 86400)}</b>\n"
-        f"Магазинов: <b>{len(cat.all_shops)}</b> опубликовано, {len(cat.shops) - len(cat.all_shops)} скрыто\n{tags}\n\n"
-        f"Просмотры карточек: сутки <b>{views[0]}</b> · 7 дн <b>{views[1]}</b> · 30 дн <b>{views[2]}</b>\n"
-        f"Уникальных зрителей за 7 дн: <b>{uniq}</b>\n\n"
-        f"<b>Топ магазинов за 30 дней:</b>\n{top_lines}"
+        "👥 <b>Пользователи</b>\n"
+        f"Всего <b>{await count('SELECT COUNT(*) FROM users')}</b>, "
+        f"новых за неделю <b>{await count('SELECT COUNT(*) FROM users WHERE created_at > ?', week)}</b>\n"
+        f"Заходили: сутки <b>{seen[0]}</b> · неделя <b>{seen[1]}</b> · месяц <b>{seen[2]}</b>\n\n"
+        "🏪 <b>Магазины</b>\n"
+        f"Опубликовано <b>{len(cat.all_shops)}</b>, скрыто <b>{len(cat.shops) - len(cat.all_shops)}</b>\n"
+        + (f"{tags}\n" if tags else "") + "\n"
+        "👁 <b>Открыли карточки</b>\n"
+        f"Сутки <b>{views[0]}</b> · неделя <b>{views[1]}</b> · месяц <b>{views[2]}</b>\n"
+        f"Разных людей за неделю: <b>{uniq}</b>\n\n"
+        f"🏆 <b>Популярные за месяц</b>\n{top_lines}"
     )
     return html, [back_btn("a:home")]
 
@@ -273,5 +253,5 @@ async def view_log(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("◀️ Новее", f"a:log:{p - 1}"))
     if len(rows_db) > size:
         nav.append(b("Старее ▶️", f"a:log:{p + 1}"))
-    return "📜 <b>Журнал действий</b>\n\n" + ("\n".join(lines) or "пусто"), [nav, back_btn("a:cfg")]
+    return "📜 <b>Журнал</b>, хранится 90 дней\n\n" + ("\n".join(lines) or "пусто"), [nav, back_btn("a:cfg")]
 

@@ -27,11 +27,11 @@ log = logging.getLogger(__name__)
 router = Router(name="admin")
 
 PERMS: dict[str, str] = {
-    "shops": "🏪 Магазины",
+    "shops": "🏪 Магазины и категории",
     "applications": "📝 Заявки и анкета",
     "menu": "📋 Меню и кнопки",
-    "texts": "📝 Тексты и переводы",
-    "cities": "🏙 Города, метки, категории",
+    "texts": "📝 Тексты",
+    "cities": "🏙 Города и метки",
     "users": "👥 Пользователи и баны",
     "broadcast": "📣 Рассылка",
     "stats": "📊 Статистика",
@@ -405,6 +405,10 @@ def _has_media(message: Message) -> bool:
 async def in_html(ctx: Ctx, message: Message, kind: str, key: str):
     await _check_target_perm(ctx, kind)
     html, plain = message_html(message)
+    if (kind, key) == ("text", "contact_greeting") and plain.strip() == "-":  # приветствие можно выключить
+        await update_target(ctx, kind, key, html="")
+        ctx.notice = "Приветствие выключено"
+        return TARGETS[kind][2].format(key)
     row = await fetch_target(ctx, kind, key)
     fields: dict[str, Any] = {}
     media_id = row["media_id"] if "media_id" in row.keys() else None
@@ -480,6 +484,11 @@ async def act_no_media(ctx: Ctx, kind: str, key: str):
     return TARGETS[kind][2].format(key)
 
 
+def langs_on(app: App | None) -> bool:
+    """Переводы в админке показываются, только когда включены другие языки (настройка multilang)."""
+    return bool(app and app.catalog.setting("multilang", 0))
+
+
 def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool = True, app: App | None = None,
                 compact: bool = False) -> Rows:
     """Кнопки редактирования: текст и иконка, цвет, текст экрана, картинка.
@@ -509,7 +518,7 @@ def editor_extras(kind: str, key: str, row: Any, *, app: App | None = None, labe
             rows.append([b("🔁 Сделать GIF (играет сам, без звука)" if m.kind == "video"
                            else "🔊 Сделать видео со звуком", f"x:mkind:{kind}:{key}")])
         rows.append([b("✖️ Убрать картинку / видео", f"x:nomed:{kind}:{key}")])
-    if kind in TR_FIELDS:
+    if kind in TR_FIELDS and langs_on(app):
         rows.append([b("🌐 Перевод на другие языки", f"a:trl:{kind}:{key}")])
     return rows
 
@@ -592,7 +601,7 @@ CONFIG_SECTIONS = [
     ("cities", "🏙 Города", "a:cities:0"),
     ("cities", "🏷 Метки", "a:tags"),
     ("shops", "🗂 Категории товаров", "a:catgs"),
-    ("texts", "🌐 Языки", "a:langs"),
+    ("texts", "💬 Приветствие оператору", "a:text:contact_greeting"),
     ("settings", "🛡 Защита", "a:prot"),
     ("settings", "⚙️ Настройки", "a:set"),
     ("backup", "💾 Бэкап", "a:bak"),
@@ -607,5 +616,4 @@ async def view_config(ctx: Ctx) -> ViewResult:
     btns = [b(t, cb) for p, t, cb in CONFIG_SECTIONS if "*" in perms or p in perms]
     rows = [btns[i:i + 2] for i in range(0, len(btns), 2)]
     rows.append(back_btn("a:home"))
-    return ("⚙️ <b>Настройки каталога</b>\n\nЗдесь то, что обычно настраивается один раз: "
-            "меню, тексты, города, метки, категории, языки, защита, бэкапы и админы."), rows
+    return "⚙️ <b>Настройки каталога</b>", rows

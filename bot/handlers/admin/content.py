@@ -6,7 +6,7 @@ from aiogram.types import Message
 from ...richtext import parse_label
 from ...ui import button, grid, paginate
 from .core import (
-    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_rows, icon_line, media_line, move, on_input,
+    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_rows, icon_line, langs_on, media_line, move, on_input,
     style_name, view,
 )
 
@@ -78,10 +78,8 @@ TEXT_HELP = {
     "card_cities": ("Строка под описанием магазина. Бот сам собирает её из городов магазина.",
                     {"города": "список городов через запятую"}),
     "card_cities_all": ("Показывается вместо списка, если магазин отмечен во всех городах.", {}),
-    "contact_greeting": ("Покупатель жмёт кнопку-контакт оператора, и в чате с оператором уже вписан этот текст. "
-                         "Человек сам нажимает Отправить. Работает для ссылок на @username. "
-                         "Форматирование здесь не поддерживается, только текст и обычные эмодзи. "
-                         "Оставьте текст пустым, чтобы отключить.", {}),
+    "contact_greeting": ("Вписывается в чат с оператором, когда покупатель жмёт кнопку контакта. "
+                         "Только обычный текст и эмодзи. Отправьте минус, чтобы выключить.", {}),
 }
 BUTTON_NAMES = {
     "back": "◀️ Назад",
@@ -172,12 +170,13 @@ async def view_text(ctx: Ctx, key: str) -> ViewResult:
             f"<code>{{{k}}}</code> ({v})" for k, v in subs.items()) + "\n"
     html = (f"📝 <b>{TEXT_NAMES.get(key, 'Текст')}</b>\n"
             f"<i>{where}</i>\n{subs_line}"
-            f"Медиа: {media_line(app, row['media_id'])}\n\n"
-            f"<b>Сейчас так:</b>\n\n{row['html'] or '<i>пусто</i>'}")
+            + (f"Медиа: {media_line(app, row['media_id'])}\n" if key in MEDIA_TEXTS else "")
+            + f"\n<b>Сейчас так:</b>\n\n{row['html'] or '<i>пусто</i>'}")
     rows = editor_rows("text", key, row, label=False, rich=True, app=app)
     if key not in MEDIA_TEXTS:  # медиа уместно только у экранов
-        rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")],
-                [b("🌐 Перевод на другие языки", f"a:trl:text:{key}")]]
+        rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")]]
+        if langs_on(app):
+            rows.append([b("🌐 Перевод на другие языки", f"a:trl:text:{key}")])
     g = group_of("text", key)
     rows.append(back_btn(f"a:txg:{g}" if g >= 0 else "a:texts"))
     return html, rows

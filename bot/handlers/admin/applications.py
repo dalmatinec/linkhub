@@ -9,7 +9,7 @@ from aiogram.types import Message
 from ...catalog import now
 from ...richtext import LABEL_LIMIT, normalize_url, parse_label
 from ...ui import button, fill, markup, paginate
-from .core import Ctx, InputError, Rows, ViewResult, action, b, back_btn, move, on_input, snippet, view
+from .core import Ctx, InputError, Rows, ViewResult, action, b, back_btn, langs_on, move, on_input, snippet, view
 from .shops import fmt_date
 
 P = "applications"
@@ -45,9 +45,7 @@ async def view_applications(ctx: Ctx, status: str = "new", page: str = "0") -> V
     rows.append([b(("• " if s == status else "") + t, f"a:appls:{s}:0") for s, t in STATUS.items()])
     rows.append([b("⚙️ Вопросы анкеты", "a:flds")])
     rows.append(back_btn("a:home"))
-    html = (f"📝 <b>Заявки</b>, {STATUS[status]}: {len(rows_db)}\n\n"
-            "Люди заполняют анкету через кнопку меню 📝 Разместить магазин. Из заявки одной кнопкой "
-            "создаётся черновик карточки, останется проверить его и опубликовать.")
+    html = f"📝 <b>Заявки</b>, {STATUS[status]}: {len(rows_db)}"
     return html, rows
 
 
@@ -281,7 +279,7 @@ async def view_field(ctx: Ctx, field_id: str) -> ViewResult:
         [b("Обязательный: да" if f.required else "Обязательный: нет", f"x:fldr:{fid}")],
         [b(f"Роль: {ROLE_NAMES.get(f.role, f.role)}", f"x:fldrole:{fid}")],
         [b("⬆️ Выше", f"x:fldmv:{fid}:-1"), b("⬇️ Ниже", f"x:fldmv:{fid}:1")],
-        [b("🌐 Перевод на другие языки", f"a:trl:field:{fid}")],
+        *([[b("🌐 Перевод на другие языки", f"a:trl:field:{fid}")]] if langs_on(ctx.app) else []),
         [b("🗑 Удалить", f"x:flddel:{fid}", "danger")],
         back_btn("a:flds"),
     ]
