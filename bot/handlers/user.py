@@ -68,14 +68,37 @@ def back_to_parent(tr: Tr, item: MenuItem) -> list[InlineKeyboardButton]:
     return [sys_button(tr, "back", f"m:{item.parent_id}")]
 
 
-def screen_menu(app: App, tr: Tr, item: MenuItem, first_name: str):
+def city_rows(app: App, tr: Tr, block: MenuItem, user_id: int) -> list[list[InlineKeyboardButton]]:
+    """Блок городов: «📍 Мой город» (если он не среди главных), главные города по 2 в ряд, «Другие города»."""
+    cat = app.catalog
+    rows: list[list[InlineKeyboardButton]] = []
+    mine = cat.cities.get(app.last_city.get(user_id, 0))
+    if mine and mine.is_active and not mine.is_main:
+        b = tr.button("my_city")
+        rows.append([button(fill(b.label, city=tr.label("city", mine)), b.icon or mine.icon, b.style or mine.style,
+                            cb=f"y:{mine.id}:{block.id}:0")])
+    btns = [button(tr.label("city", c), c.icon, c.style, cb=f"y:{c.id}:{block.id}:0") for c in cat.main_cities]
+    if cat.other_cities:
+        btns.append(sys_button(tr, "other_cities", f"o:{block.id}:0"))
+    return rows + grid(btns, int(cat.setting("per_row", 2)))
+
+
+def screen_menu(app: App, tr: Tr, item: MenuItem, first_name: str, user_id: int = 0):
     cat = app.catalog
     rows: dict[int, list[InlineKeyboardButton]] = {}
+    blocks: dict[int, list[list[InlineKeyboardButton]]] = {}
     for child in cat.active_children(item.id):
         if child.kind == "language" and len(cat.languages) < 2:
             continue
-        rows.setdefault(child.row, []).append(item_button(tr, child))
-    kb = [rows[r] for r in sorted(rows)]
+        if child.kind == "city_block":
+            blocks.setdefault(child.row, []).extend(city_rows(app, tr, child, user_id))
+        else:
+            rows.setdefault(child.row, []).append(item_button(tr, child))
+    kb: list[list[InlineKeyboardButton]] = []
+    for r in sorted(set(rows) | set(blocks)):
+        if r in rows:
+            kb.append(rows[r])
+        kb.extend(blocks.get(r, []))
     kb.append(back_to_parent(tr, item))
     return fill(tr.html("item", item), first_name=first_name), item.media_id, markup(kb)
 
@@ -114,12 +137,9 @@ def screen_item_list(app: App, tr: Tr, item: MenuItem, page: int, favorites: lis
     return html, item.media_id, markup(kb)
 
 
-def screen_cities(app: App, tr: Tr, item: MenuItem):
+def screen_cities(app: App, tr: Tr, item: MenuItem, user_id: int = 0):
     cat = app.catalog
-    btns = [button(tr.label("city", c), c.icon, c.style, cb=f"y:{c.id}:{item.id}:0") for c in cat.main_cities]
-    if cat.other_cities:
-        btns.append(sys_button(tr, "other_cities", f"o:{item.id}:0"))
-    kb = grid(btns, int(cat.setting("per_row", 2)))
+    kb = city_rows(app, tr, item, user_id)
     kb.append(back_to_parent(tr, item))
     return tr.html("item", item) or tr.text("cities"), item.media_id or cat.text("cities").media_id, markup(kb)
 
@@ -151,6 +171,8 @@ def screen_city(app: App, tr: Tr, city_id: int, item_id: int, page: int):
         return None
     city_name = tr.label("city", city)
     cats = cat.city_categories.get(city_id, []) if cat.setting("city_categories", 1) else []
+    if len(cat.by_city.get(city_id, [])) <= int(cat.setting("city_categories_min", 6)):
+        cats = []  # магазинов мало — категории только мешают
     if not cats:  # категорий нет — сразу магазины
         header = fill(tr.text("city_shops"), city=city_name)
         html, kb = shop_list(app, tr, cat.by_city.get(city_id, []), page, header, f"y{city_id}.{item_id}.",
@@ -250,8 +272,8 @@ async def open_card(app: App, tr: Tr, uid: int, chat_id: int, shop: Shop, ctx: s
     await show(app, uid, chat_id, *screen_card(app, tr, shop, ctx, is_fav), current=current)
 
 
-def root_screen(app: App, tr: Tr, first_name: str):
-    return screen_menu(app, tr, app.catalog.menu[app.catalog.root_id], first_name)
+def root_screen(app: App, tr: Tr, first_name: str, user_id: int = 0):
+    return screen_menu(app, tr, app.catalog.menu[app.catalog.root_id], first_name, user_id)
 
 
 # ---------- /start ----------
@@ -269,7 +291,7 @@ async def cmd_start(message: Message, command: CommandObject, state: FSMContext,
     if app.catalog.menu.get(app.catalog.root_id) is None:
         await message.answer("Бот ещё не настроен.")
         return
-    await show(app, user.id, message.chat.id, *root_screen(app, tr, user.first_name or ""))
+    await show(app, user.id, message.chat.id, *root_screen(app, tr, user.first_name or "", user.id))
 
 
 # ---------- навигация ----------
@@ -279,6 +301,8 @@ async def cb_menu(call: CallbackQuery, state: FSMContext, app: App, tr: Tr, lang
     item = cat.menu.get(int(call.data[2:]) or cat.root_id)
     if item is None or not item.is_active:
         item = cat.menu[cat.root_id]
+    if item.kind == "city_block":  # «Назад» из города, открытого с блока, ведёт в меню, где этот блок
+        item = cat.menu.get(item.parent_id) or cat.menu[cat.root_id]
     await state.set_state(None)
     cur = current_of(call.message)
     uid, chat_id = call.from_user.id, call.message.chat.id
@@ -286,7 +310,7 @@ async def cb_menu(call: CallbackQuery, state: FSMContext, app: App, tr: Tr, lang
         favs = await app.favorite_ids(uid) if item.kind == "favorites" else None
         await show(app, uid, chat_id, *screen_item_list(app, tr, item, 0, favs), current=cur)
     elif item.kind == "cities":
-        await show(app, uid, chat_id, *screen_cities(app, tr, item), current=cur)
+        await show(app, uid, chat_id, *screen_cities(app, tr, item, uid), current=cur)
     elif item.kind == "categories":
         await show(app, uid, chat_id, *screen_categories(app, tr, item), current=cur)
     elif item.kind == "language":
@@ -299,7 +323,7 @@ async def cb_menu(call: CallbackQuery, state: FSMContext, app: App, tr: Tr, lang
         await show(app, uid, chat_id, tr.html("item", item) or tr.text("search_prompt"),
                    item.media_id or cat.text("search_prompt").media_id, kb, current=cur)
     else:
-        await show(app, uid, chat_id, *screen_menu(app, tr, item, call.from_user.first_name or ""), current=cur)
+        await show(app, uid, chat_id, *screen_menu(app, tr, item, call.from_user.first_name or "", uid), current=cur)
     await call.answer()
 
 
@@ -336,6 +360,8 @@ async def _show_or_home(call: CallbackQuery, state: FSMContext, app: App, tr: Tr
 @router.callback_query(F.data.startswith("y:"))
 async def cb_city(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> None:
     _, city_id, item_id, page = call.data.split(":")
+    if int(city_id) in app.catalog.cities:
+        await app.remember_city(call.from_user.id, int(city_id))
     await _show_or_home(call, state, app, tr, screen_city(app, tr, int(city_id), int(item_id), int(page)))
 
 
@@ -404,7 +430,7 @@ async def cb_noop(call: CallbackQuery) -> None:
 async def cb_home(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> None:
     await state.set_state(None)
     await show(app, call.from_user.id, call.message.chat.id,
-               *root_screen(app, tr, call.from_user.first_name or ""), current=current_of(call.message))
+               *root_screen(app, tr, call.from_user.first_name or "", call.from_user.id), current=current_of(call.message))
     await call.answer()
 
 
@@ -454,7 +480,7 @@ async def on_report(message: Message, state: FSMContext, app: App, tr: Tr) -> No
     kb = markup([[sys_button(tr, "back", f"s:{shop.id}:{data.get('report_ctx', 'm0')}")]])
     await show(app, message.from_user.id, message.chat.id, tr.text("report_thanks"), None, kb,
                current=app.screens.get(message.from_user.id))
-    html = (f"🚩 <b>Жалоба #{report_id}</b> на «{escape(shop.label)}»\n"
+    html = (f"🚩 <b>Жалоба #{report_id}</b> на магазин <b>{escape(shop.label)}</b>\n"
             f"От: <code>{message.from_user.id}</code>\n\n{escape(message.text[:1000])}")
     await app.notify_admins(html, perm="reports", reply_markup=markup([[button("Открыть", cb=f"a:rep:{report_id}")]]))
     await app.log_event(html)
@@ -497,7 +523,7 @@ def field_prompt(tr: Tr, fields: list[AppField], idx: int, error: str = ""):
 def apply_summary(tr: Tr, answers: list[dict]):
     parts = [tr.text("apply_confirm")]
     for a in answers:
-        value = a["html"] or ("📎" if a["media_id"] else "—")
+        value = a["html"] or ("📎" if a["media_id"] else "<i>пропущено</i>")
         if a["html"] and a["media_id"]:
             value = "📎 " + value
         parts.append(f"<b>{escape(tr.get('field', a['field_id'], 'label', a['label']))}</b>\n{value}")
@@ -593,7 +619,7 @@ async def submit_application(app: App, user, answers: list[dict]) -> int:
     )
     name = next((a["plain"] for a in answers if a["role"] == "name" and a["plain"]), "без названия")
     who = f"@{user.username}" if user.username else escape(user.first_name or str(user.id))
-    html = f"📝 <b>Новая заявка #{app_id}</b>: «{escape(name[:64])}»\nОт: {who} (<code>{user.id}</code>)"
+    html = f"📝 <b>Новая заявка #{app_id}</b>: {escape(name[:64])}\nОт: {who} (<code>{user.id}</code>)"
     await app.notify_admins(html, perm="applications",
                             reply_markup=markup([[button("Открыть заявку", cb=f"a:appl:{app_id}")]]))
     await app.log_event(html)

@@ -32,6 +32,7 @@ class App:
     banned: dict[int, int | None] = field(default_factory=dict)  # user_id -> until (None = навсегда)
     screens: dict[int, Screen] = field(default_factory=dict)
     langs: dict[int, str] = field(default_factory=dict)  # явно выбранный язык
+    last_city: dict[int, int] = field(default_factory=dict)  # «📍 Мой город»
     _seen: dict[int, tuple[int, str | None, str | None]] = field(default_factory=dict)
     _screen_ids: dict[int, int] = field(default_factory=dict)
     _events: list[tuple[int, int, str, int]] = field(default_factory=list)
@@ -39,6 +40,8 @@ class App:
     async def load_users(self) -> None:
         self.known_users = {r["id"] for r in await self.db.fetchall("SELECT id FROM users")}
         self.langs = {r["id"]: r["lang"] for r in await self.db.fetchall("SELECT id, lang FROM users WHERE lang IS NOT NULL")}
+        self.last_city = {r["id"]: r["last_city"] for r in await self.db.fetchall(
+            "SELECT id, last_city FROM users WHERE last_city IS NOT NULL")}
         self.banned = {
             r["id"]: r["banned_until"]
             for r in await self.db.fetchall("SELECT id, banned_until FROM users WHERE is_banned = 1")
@@ -66,6 +69,11 @@ class App:
     async def set_lang(self, user_id: int, lang: str) -> None:
         self.langs[user_id] = lang
         await self.db.execute("UPDATE users SET lang = ? WHERE id = ?", (lang, user_id))
+
+    async def remember_city(self, user_id: int, city_id: int) -> None:
+        if self.last_city.get(user_id) != city_id:
+            self.last_city[user_id] = city_id
+            await self.db.execute("UPDATE users SET last_city = ? WHERE id = ?", (city_id, user_id))
 
     # ---------- избранное ----------
     async def is_favorite(self, user_id: int, shop_id: int) -> bool:

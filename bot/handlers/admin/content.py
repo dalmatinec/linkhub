@@ -89,6 +89,7 @@ BUTTON_NAMES = {
     "other_cities": "🌍 Другие города",
     "report": "🚩 Пожаловаться",
     "all_shops": "📋 Все магазины города",
+    "my_city": "📍 Мой город ({город})",
     "fav_add": "⭐ В избранное",
     "fav_remove": "✖️ Из избранного",
     "share": "📤 Поделиться магазином",
@@ -365,11 +366,14 @@ async def view_categories(ctx: Ctx) -> ViewResult:
     rows.append([b("➕ Добавить категории", "x:catnew", "success")])
     rows.append([b(f"🏙 Категории внутри города: {'вкл' if cat.setting('city_categories', 1) else 'выкл'}",
                    "x:cattog")])
+    rows.append([b(f"Показывать категории, если в городе больше {cat.setting('city_categories_min', 6)} магазинов",
+                   "x:catmin")])
     rows.append(back_btn("a:home"))
     html = ("🗂 <b>Категории</b> (VPN, подарки, звёзды…)\n\n"
             "Магазину можно поставить несколько категорий (в карточке магазина → «🗂 Категории»).\n"
             "Когда «Категории внутри города» включены, после выбора города человек сначала видит категории, "
-            "в которых в этом городе есть магазины, и кнопку «Все магазины».\n"
+            "в которых в этом городе есть магазины, и кнопку «Все магазины». Если магазинов в городе мало, "
+            "категории не показываются, сразу открывается список.\n"
             "Можно также добавить в меню кнопку типа «🗂 Категории» — категории по всем городам.")
     return html, rows
 
@@ -379,6 +383,24 @@ async def act_city_categories_toggle(ctx: Ctx):
     value = 0 if ctx.app.catalog.setting("city_categories", 1) else 1
     await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('city_categories', ?)", (str(value),))
     await ctx.reload()
+    return "a:catgs"
+
+
+@action("catmin", "cities")
+async def act_categories_min(ctx: Ctx):
+    return await ctx.ask("catmin", "Сколько магазинов должно быть в городе, чтобы показывать категории? "
+                                   "Если меньше или столько же, откроется сразу список магазинов. Отправьте число, "
+                                   "например 6. 0 значит показывать категории всегда.", "a:catgs")
+
+
+@on_input("catmin", "cities")
+async def in_categories_min(ctx: Ctx, message: Message):
+    text = (message.text or "").strip()
+    if not text.isdigit() or int(text) > 1000:
+        raise InputError("Нужно число от 0 до 1000.")
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('city_categories_min', ?)", (text,))
+    await ctx.reload()
+    await ctx.log("settings", f"city_categories_min={text}")
     return "a:catgs"
 
 

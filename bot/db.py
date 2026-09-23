@@ -255,6 +255,10 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX ix_reviews_shop ON reviews(shop_id, status);
     """,
+    # 3 — последний выбранный город («📍 Мой город»)
+    """
+    ALTER TABLE users ADD COLUMN last_city INTEGER;
+    """,
 ]
 
 

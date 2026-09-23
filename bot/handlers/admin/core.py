@@ -474,30 +474,59 @@ async def act_no_media(ctx: Ctx, kind: str, key: str):
     return TARGETS[kind][2].format(key)
 
 
-def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool = True, app: App | None = None) -> Rows:
-    """Стандартные кнопки редактирования: текст кнопки, цвет, иконка, текст экрана, медиа."""
+def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool = True, app: App | None = None,
+                compact: bool = False) -> Rows:
+    """Кнопки редактирования: текст и иконка, цвет, текст экрана, картинка.
+    compact=True — только основное, остальное (перевод, убрать иконку/медиа) на экране «Ещё»."""
     rows: Rows = []
     if label:
-        r = [b("✏️ Текст кнопки", f"x:lbl:{kind}:{key}")]
+        r = [b("✏️ Текст и иконка", f"x:lbl:{kind}:{key}")]
         if "style" in row.keys():
-            r.append(b(f"🎨 Цвет: {style_name(row['style'])}", f"x:sty:{kind}:{key}"))
+            r.append(b(f"🎨 Цвет: {style_name(row['style'])}", f"a:col:{kind}:{key}"))
         rows.append(r)
-        if "icon" in row.keys() and row["icon"]:
-            rows.append([b("✖️ Убрать иконку", f"x:noico:{kind}:{key}")])
     if rich:
-        r = [b("📝 Текст экрана" if kind != "shop" else "📝 Текст карточки", f"x:htm:{kind}:{key}"),
-             b("🖼 Медиа", f"x:med:{kind}:{key}")]
-        rows.append(r)
-        if row["media_id"]:
-            m = app.media.get(row["media_id"]) if app else None
-            if m and m.kind in ("video", "animation") and m.path.suffix == ".mp4":
-                rows.append([b("🔁 Сделать GIF: автовоспроизведение без звука" if m.kind == "video"
-                               else "🔊 Сделать видео со звуком (без автовоспроизведения)",
-                               f"x:mkind:{kind}:{key}")])
-            rows.append([b("✖️ Убрать медиа", f"x:nomed:{kind}:{key}")])
+        rows.append([b("📝 Текст экрана" if kind != "shop" else "📝 Текст карточки", f"x:htm:{kind}:{key}"),
+                     b("🖼 Картинка / видео", f"x:med:{kind}:{key}")])
+    if not compact:
+        rows += editor_extras(kind, key, row, app=app, label=label, rich=rich)
+    return rows
+
+
+def editor_extras(kind: str, key: str, row: Any, *, app: App | None = None, label: bool = True,
+                  rich: bool = True) -> Rows:
+    rows: Rows = []
+    if label and "icon" in row.keys() and row["icon"]:
+        rows.append([b("✖️ Убрать иконку", f"x:noico:{kind}:{key}")])
+    if rich and row["media_id"]:
+        m = app.media.get(row["media_id"]) if app else None
+        if m and m.kind in ("video", "animation") and m.path.suffix == ".mp4":
+            rows.append([b("🔁 Сделать GIF (играет сам, без звука)" if m.kind == "video"
+                           else "🔊 Сделать видео со звуком", f"x:mkind:{kind}:{key}")])
+        rows.append([b("✖️ Убрать картинку / видео", f"x:nomed:{kind}:{key}")])
     if kind in TR_FIELDS:
         rows.append([b("🌐 Перевод на другие языки", f"a:trl:{kind}:{key}")])
     return rows
+
+
+COLORS = [(None, "⚪️ Обычная"), ("primary", "🔵 Синяя"), ("success", "🟢 Зелёная"), ("danger", "🔴 Красная")]
+
+
+@view("col")
+async def view_color(ctx: Ctx, kind: str, key: str) -> ViewResult:
+    await _check_target_perm(ctx, kind)
+    row = await fetch_target(ctx, kind, key)
+    rows: Rows = [[button(("✅ " if row["style"] == st else "") + name, style=st, cb=f"x:setsty:{kind}:{key}:{st or 'none'}")]
+                  for st, name in COLORS]
+    rows.append(back_btn(TARGETS[kind][2].format(key)))
+    return "🎨 <b>Цвет кнопки</b>\nНажмите нужный. Каждая кнопка ниже показана своим цветом.", rows
+
+
+@action("setsty")
+async def act_set_style(ctx: Ctx, kind: str, key: str, style: str):
+    await _check_target_perm(ctx, kind)
+    await update_target(ctx, kind, key, style=None if style == "none" else style)
+    ctx.notice = "✅ Цвет сохранён"
+    return TARGETS[kind][2].format(key)
 
 
 # ---------- перестановка ----------

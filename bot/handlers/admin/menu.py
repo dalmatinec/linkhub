@@ -7,8 +7,8 @@ from ...catalog import MenuItem
 from ...richtext import normalize_url, parse_label
 from ..user import screen_menu
 from .core import (
-    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_rows, icon_line, media_line, on_input, snippet,
-    style_name, view,
+    Ctx, InputError, Rows, ViewResult, action, b, back_btn, editor_extras, editor_rows, media_line, on_input, snippet,
+    view,
 )
 from ...ui import button
 
@@ -18,7 +18,8 @@ KINDS = {
     "menu": "📂 Подменю (свои кнопки)",
     "tag": "🏷 Магазины с меткой",
     "all": "🗂 Все магазины",
-    "cities": "🏙 Выбор города",
+    "city_block": "🏙 Блок городов (главные города + Другие города)",
+    "cities": "🏙 Выбор города (отдельным экраном)",
     "categories": "🗂 Категории (все города)",
     "search": "🔍 Поиск",
     "favorites": "⭐ Избранное",
@@ -29,7 +30,11 @@ KINDS = {
 
 
 def item_title(item: MenuItem) -> str:
-    return ("" if item.is_active else "🙈 ") + (item.label or "—")
+    label = "🏙 [города]" if item.kind == "city_block" else (item.label or "без названия")
+    return ("" if item.is_active else "🙈 ") + label
+
+
+NO_SCREEN = ("url", "city_block")  # у этих кнопок нет своего экрана с текстом
 
 
 @view("item", P)
@@ -42,52 +47,115 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
     row = await app.db.fetchone("SELECT * FROM menu_items WHERE id = ?", (item.id,))
     is_root = item.id == cat.root_id
     sid = str(item.id)
+    rows: Rows = []
 
-    lines = [f"📋 <b>{'Главное меню (приветствие)' if is_root else escape(item.label)}</b>"]
     if is_root:
-        lines.append("<i>Первый экран после /start. Можно вставить <code>{имя}</code> — имя пользователя.</i>")
-    if not is_root:
-        lines.append(f"Тип: {KINDS.get(item.kind, item.kind)}")
-        lines.append(f"Иконка: {icon_line(item.icon)} · Цвет: {style_name(item.style)}")
-        lines.append(f"Ряд: {item.row + 1} · Позиция в ряду: {item.position + 1}")
-        lines.append(f"Статус: {'включена' if item.is_active else '🙈 скрыта'}")
+        lines = ["📋 <b>Главное меню</b>",
+                 "Первый экран после /start. В тексте можно написать <code>{имя}</code>, бот подставит имя человека.",
+                 f"Картинка: {media_line(app, item.media_id)}",
+                 f"\n<b>Текст:</b>\n{snippet(item.html)}",
+                 "\n<b>Кнопки</b> (нажмите, чтобы настроить):"]
+    else:
+        lines = [f"🔘 <b>{escape(item_title(item))}</b>",
+                 f"Что открывает: {KINDS.get(item.kind, item.kind)}"]
+        if not item.is_active:
+            lines.append("🙈 Скрыта, пользователи её не видят")
         if item.kind == "tag":
             tag = cat.tags.get(int(item.payload or 0))
             lines.append(f"Метка: {escape(tag.label) if tag else '⚠️ не выбрана'}")
         if item.kind == "url":
             lines.append(f"Ссылка: {escape(item.payload or '⚠️ не задана')}")
-    if item.kind != "url":
-        lines.append(f"Медиа: {media_line(app, item.media_id)}")
-        lines.append(f"\n<b>Текст экрана:</b>\n{snippet(item.html)}")
-        if item.kind in ("cities", "search", "categories", "favorites", "apply", "language") and not item.html:
-            lines.append("<i>(пусто — используется общий текст из раздела «Тексты»)</i>")
-    if item.kind == "menu":
-        lines.append("\n<b>Кнопки этого экрана</b> — нажмите, чтобы настроить:")
+        if item.kind == "city_block":
+            lines.append("Показывает главные города ⭐ по 2 в ряд и кнопку «Другие города». "
+                         "Какие города главные, настраивается в разделе 🏙 Города.")
+        if item.kind not in NO_SCREEN:
+            lines.append(f"Картинка: {media_line(app, item.media_id)}")
+            lines.append(f"\n<b>Текст экрана:</b>\n{snippet(item.html)}")
+            if item.kind in ("cities", "search", "categories", "favorites", "apply", "language") and not item.html:
+                lines.append("<i>Пусто, поэтому используется общий текст из раздела 📝 Тексты.</i>")
+        if item.kind != "city_block":
+            lines.append("\nТак кнопка выглядит у пользователей 👇")
+            rows.append([button(item.label, item.icon, item.style, cb="noop")])
+        if item.kind == "menu":
+            lines.append("\n<b>Кнопки внутри</b> (нажмите, чтобы настроить):")
 
-    rows: Rows = []
     if item.kind == "menu":
         by_row: dict[int, list] = {}
         for child in item.children:
             by_row.setdefault(child.row, []).append(b(item_title(child), f"a:item:{child.id}"))
         rows.extend(by_row[r] for r in sorted(by_row))
-        rows.append([b("➕ Добавить кнопку", f"a:inew:{sid}", "success")])
-    rows.extend(editor_rows("item", sid, row, label=not is_root, rich=item.kind != "url", app=app))
+        rows.append([b("➕ Добавить кнопку", f"a:inew:{sid}", "success"),
+                     b("↕️ Расстановка", f"a:arr:{sid}:0")])
+
+    rows.extend(editor_rows("item", sid, row, label=not is_root and item.kind != "city_block",
+                            rich=item.kind not in NO_SCREEN, app=app, compact=True))
+    if not is_root:
+        rows.append([b("↕️ Переставить", f"a:arr:{item.parent_id}:{sid}"), b("⚙️ Ещё", f"a:imore:{sid}")])
+    else:
+        rows.append([b("👀 Предпросмотр", f"x:iprev:{sid}"), b("⚙️ Ещё", f"a:imore:{sid}")])
+    rows.append(back_btn(f"a:item:{item.parent_id}" if item.parent_id else "a:home"))
+    return "\n".join(lines), rows
+
+
+@view("imore", P)
+async def view_item_more(ctx: Ctx, item_id: str) -> ViewResult:
+    app = ctx.app
+    item = app.catalog.menu.get(int(item_id))
+    if item is None:
+        return await view_item(ctx, str(app.catalog.root_id))
+    row = await app.db.fetchone("SELECT * FROM menu_items WHERE id = ?", (item.id,))
+    sid = str(item.id)
+    is_root = item.id == app.catalog.root_id
+    rows: Rows = editor_extras("item", sid, row, app=app, label=not is_root, rich=item.kind not in NO_SCREEN)
     if item.kind == "tag":
         rows.append([b("🏷 Сменить метку", f"x:itag:{sid}")])
     if item.kind == "url":
         rows.append([b("🔗 Изменить ссылку", f"x:iurl:{sid}")])
+    if item.kind == "menu" and not is_root:
+        rows.append([b("👀 Предпросмотр", f"x:iprev:{sid}")])
     if not is_root:
-        rows.append([b("⬆️ Ряд выше", f"x:irow:{sid}:-1"), b("⬇️ Ряд ниже", f"x:irow:{sid}:1")])
-        rows.append([b("⬅️ Левее", f"x:ipos:{sid}:-1"), b("➡️ Правее", f"x:ipos:{sid}:1")])
-        rows.append([b("↕️ В отдельный ряд", f"x:isolo:{sid}")])
         r = [b("🙈 Скрыть" if item.is_active else "👁 Показать", f"x:iact:{sid}")]
         if not item.is_system:
             r.append(b("🗑 Удалить", f"a:idel:{sid}", "danger"))
         rows.append(r)
-    if item.kind == "menu":
-        rows.append([b("👀 Предпросмотр", f"x:iprev:{sid}")])
-    rows.append(back_btn(f"a:item:{item.parent_id}" if item.parent_id else "a:home"))
-    return "\n".join(lines), rows
+    rows.append(back_btn(f"a:item:{sid}"))
+    return f"⚙️ <b>{escape(item_title(item))}</b>: дополнительно", rows
+
+
+# ---------- расстановка ----------
+@view("arr", P)
+async def view_arrange(ctx: Ctx, parent_id: str, selected: str = "0") -> ViewResult:
+    cat = ctx.app.catalog
+    parent = cat.menu.get(int(parent_id)) or cat.menu[cat.root_id]
+    sel = int(selected)
+    by_row: dict[int, list] = {}
+    for child in parent.children:
+        mark = "👉 " if child.id == sel else ""
+        by_row.setdefault(child.row, []).append(b(mark + item_title(child), f"a:arr:{parent.id}:{child.id}"))
+    rows: Rows = [by_row[r] for r in sorted(by_row)]
+    if sel and sel in cat.menu:
+        p, s = parent.id, sel
+        rows.append([b("⬅️", f"x:arrmv:{p}:{s}:L"), b("⬆️", f"x:arrmv:{p}:{s}:U"),
+                     b("⬇️", f"x:arrmv:{p}:{s}:D"), b("➡️", f"x:arrmv:{p}:{s}:R")])
+        rows.append([b("✏️ Настроить выбранную", f"a:item:{s}")])
+    rows.append([b("✅ Готово", f"a:item:{parent.id}", "success")])
+    html = ("↕️ <b>Расстановка кнопок</b>\n\n"
+            "Нажмите кнопку, чтобы выбрать её (👉), и двигайте стрелками.\n"
+            "⬅️ ➡️ меняют порядок в ряду.\n"
+            "⬆️ ⬇️ двигают по шагу: если в ряду несколько кнопок, выбранная уходит в отдельный ряд, "
+            "следующее нажатие ставит её к соседнему ряду.")
+    return html, rows
+
+
+@action("arrmv", P)
+async def act_arrange_move(ctx: Ctx, parent_id: str, item_id: str, direction: str):
+    item = ctx.app.catalog.menu.get(int(item_id))
+    if item is not None:
+        if direction in ("U", "D"):
+            await _move_row(ctx, item, 1 if direction == "D" else -1)
+        else:
+            await _move_pos(ctx, item, 1 if direction == "R" else -1)
+    return f"a:arr:{parent_id}:{item_id}"
 
 
 @view("inew", P)
@@ -125,7 +193,7 @@ async def in_item_new(ctx: Ctx, message: Message, parent_id: str, kind: str):
     )
     await ctx.reload()
     await ctx.log("menu.create", f"{item_id}: {label}")
-    ctx.notice = "✅ Кнопка добавлена" + (" — теперь укажите ссылку «🔗 Изменить ссылку»." if kind == "url" else ".")
+    ctx.notice = "✅ Кнопка добавлена." + (" Теперь укажите ссылку: ⚙️ Ещё → 🔗 Изменить ссылку." if kind == "url" else "")
     return f"a:item:{item_id}"
 
 
@@ -160,20 +228,34 @@ async def in_item_url(ctx: Ctx, message: Message, item_id: str):
 
 @action("irow", P)
 async def act_item_row(ctx: Ctx, item_id: str, delta: str):
+    item = ctx.app.catalog.menu.get(int(item_id))
+    if item is None:
+        return "a:home"
+    await _move_row(ctx, item, int(delta))
+    return f"a:item:{item_id}"
+
+
+async def _move_row(ctx: Ctx, item: MenuItem, delta: int) -> None:
     """Стрелки рядов по шагу:
     кнопка в ряду не одна — отрывается в новый ряд сразу под/над текущим;
     кнопка уже одна — приклеивается к соседнему ряду."""
     db = ctx.app.db
-    item = ctx.app.catalog.menu.get(int(item_id))
-    if item is None:
-        return "a:home"
-    down = int(delta) > 0
+    down = delta > 0
     parent, row = item.parent_id, item.row
+    if item.kind == "city_block":
+        target = row + (1 if down else -1)
+        if target < 0 or not await db.fetchval("SELECT 1 FROM menu_items WHERE parent_id = ? AND row = ?",
+                                                (parent, target)):
+            ctx.notice = "Блок уже в самом низу." if down else "Блок уже в самом верху."
+            return
+        await db.execute("UPDATE menu_items SET row = ? WHERE parent_id = ? AND row = ?", (row, parent, target))
+        await db.execute("UPDATE menu_items SET row = ? WHERE id = ?", (target, item.id))
+        await _compact_rows(ctx, parent)
+        return
     shares_row = await db.fetchval(
         "SELECT COUNT(*) FROM menu_items WHERE parent_id = ? AND row = ? AND id != ?", (parent, row, item.id))
     if shares_row:
-        # освобождаем место: ряды ниже сдвигаем на один
-        edge = row + 1 if down else row
+        edge = row + 1 if down else row  # освобождаем место: ряды ниже сдвигаем на один
         await db.execute("UPDATE menu_items SET row = row + 1 WHERE parent_id = ? AND row >= ? AND id != ?",
                          (parent, edge, item.id))
         await db.execute("UPDATE menu_items SET row = ?, position = 0 WHERE id = ?", (edge, item.id))
@@ -182,13 +264,19 @@ async def act_item_row(ctx: Ctx, item_id: str, delta: str):
         exists = await db.fetchval("SELECT 1 FROM menu_items WHERE parent_id = ? AND row = ?", (parent, target))
         if not exists:
             ctx.notice = "Кнопка уже в самом низу." if down else "Кнопка уже в самом верху."
-            return f"a:item:{item_id}"
+            return
+        if await db.fetchval("SELECT 1 FROM menu_items WHERE parent_id = ? AND row = ? AND kind = 'city_block'",
+                             (parent, target)):
+            # блок городов всегда в своих рядах: кнопка перепрыгивает его целиком
+            await db.execute("UPDATE menu_items SET row = ? WHERE parent_id = ? AND row = ?", (row, parent, target))
+            await db.execute("UPDATE menu_items SET row = ? WHERE id = ?", (target, item.id))
+            await _compact_rows(ctx, parent)
+            return
         # сверху пришла — встаёт первой, снизу — последней
         pos = -1 if down else await db.fetchval(
             "SELECT COALESCE(MAX(position), -1) + 1 FROM menu_items WHERE parent_id = ? AND row = ?", (parent, target))
         await db.execute("UPDATE menu_items SET row = ?, position = ? WHERE id = ?", (target, pos, item.id))
     await _compact_rows(ctx, parent)
-    return f"a:item:{item_id}"
 
 
 @action("isolo", P)
@@ -222,18 +310,22 @@ async def _compact_rows(ctx: Ctx, parent_id: int | None) -> None:
 
 @action("ipos", P)
 async def act_item_pos(ctx: Ctx, item_id: str, delta: str):
-    db = ctx.app.db
     item = ctx.app.catalog.menu.get(int(item_id))
     if item is None:
         return "a:home"
+    await _move_pos(ctx, item, int(delta))
+    return f"a:item:{item_id}"
+
+
+async def _move_pos(ctx: Ctx, item: MenuItem, delta: int) -> None:
+    db = ctx.app.db
     ids = [r["id"] for r in await db.fetchall(
         "SELECT id FROM menu_items WHERE parent_id = ? AND row = ? ORDER BY position, id", (item.parent_id, item.row))]
     i = ids.index(item.id)
-    j = min(max(i + int(delta), 0), len(ids) - 1)
+    j = min(max(i + delta, 0), len(ids) - 1)
     ids.insert(j, ids.pop(i))
     await db.executemany("UPDATE menu_items SET position = ? WHERE id = ?", ((p, x) for p, x in enumerate(ids)))
     await ctx.reload()
-    return f"a:item:{item_id}"
 
 
 @action("iact", P)
@@ -270,7 +362,7 @@ async def act_item_preview(ctx: Ctx, item_id: str):
     item = app.catalog.menu.get(int(item_id))
     if item is None:
         return "a:home"
-    html, media_id, kb = screen_menu(app, app.catalog.tr(app.catalog.base_lang), item, "Имя")
+    html, media_id, kb = screen_menu(app, app.catalog.tr(app.catalog.base_lang), item, "Имя", ctx.user_id)
     # в предпросмотре кнопки неактивны — чтобы не уводить в каталог
     for r in kb.inline_keyboard:
         for i, btn in enumerate(r):

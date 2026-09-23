@@ -125,23 +125,25 @@ def test_user_navigation(tmp_path):
         assert (USER, start_id) not in h.tg.messages, "/start пользователя удаляется"
         scr = h.screen(USER)
         assert "Добро пожаловать, U42" in scr.text
-        assert h.labels(USER) == [["💎 Премиум", "🔥 Топы"], ["🏙 Выбрать город"], ["🔍 Поиск", "⭐ Избранное"],
-                                  ["📝 Разместить магазин", "🌐 Язык"]]
+        assert h.labels(USER) == [["💎 Премиум", "🔥 Топ"], ["Алматы", "Астана"], ["Шымкент", "🌍 Другие города"],
+                                  ["🔍 Поиск", "⭐ Избранное"], ["☰ Ещё"]], "города прямо на главном экране"
         assert h.find(USER, "Премиум").style == "primary"
-
-        await h.press(USER, "Выбрать город")
-        assert h.screen(USER).id == scr.id, "экран редактируется, а не шлётся заново"
-        assert h.labels(USER) == [["Алматы", "Астана"], ["Шымкент", "🌍 Другие города"], ["◀️ Назад"]]
+        assert "—" not in scr.text and "«" not in scr.text
 
         await h.press(USER, "Другие города")
+        assert h.screen(USER).id == scr.id, "экран редактируется, а не шлётся заново"
         labels = h.labels(USER)
         assert all(len(r) == 2 for r in labels[:5]) and labels[5] == ["1/2", "▶️"] and labels[6] == ["◀️ Назад"]
         await h.press(USER, "▶️")
         assert h.labels(USER)[-2] == ["◀️", "2/2"]
         await h.press(USER, "Уральск")
-        assert "Уральск" in h.screen(USER).text and "пусто" in h.screen(USER).text
+        assert "Уральск" in h.screen(USER).text and "нет магазинов" in h.screen(USER).text
         await h.press(USER, "Назад")
         assert h.labels(USER)[-2] == ["◀️", "2/2"], "назад возвращает на ту же страницу городов"
+        await h.press(USER, "Назад")
+        assert h.labels(USER)[1] == ["📍 Уральск"], "мой город первым на главном экране"
+        await h.press(USER, "Ещё")
+        assert h.labels(USER) == [["📝 Разместить магазин"], ["🌐 Язык"], ["◀️ Назад"]]
 
         await h.send(USER, "/start")
         assert len(h.tg.chat(USER)) == 1, "в чате всегда один экран"
@@ -197,7 +199,11 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         assert h.labels(USER)[0] == ["Gift Shop"]
 
         await h.press(USER, "Назад")
-        await h.press(USER, "Выбрать город")
+        await h.press(USER, "Алматы")
+        assert h.labels(USER)[0] == ["Gift Shop"], "магазинов мало — сразу список, без категорий"
+        await h.app.db.execute("UPDATE settings SET value = '0' WHERE key = 'city_categories_min'")
+        await h.app.catalog.reload()
+        await h.press(USER, "Назад")
         await h.press(USER, "Алматы")
         assert h.labels(USER)[0] == ["🔐 VPN", "📋 Все магазины"], "в городе сначала категории"
         await h.press(USER, "VPN")
@@ -210,7 +216,7 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         assert h.labels(USER)[0] == ["Gift Shop"]
         await h.click(OWNER, "x:cattog")  # категории в городе выключены — сразу магазины
         await h.click(USER, f"y:{next(c.id for c in h.app.catalog.cities.values() if c.label == 'Алматы')}:"
-                            f"{next(i.id for i in h.app.catalog.menu.values() if i.kind == 'cities')}:0")
+                            f"{next(i.id for i in h.app.catalog.menu.values() if i.kind == 'city_block')}:0")
         assert h.labels(USER)[0] == ["Gift Shop"]
 
         # поиск
@@ -247,7 +253,7 @@ def test_label_with_premium_emoji_becomes_icon(tmp_path):
         assert h.app.catalog.button("back").style == "primary"
 
         await h.send(USER, "/start")
-        await h.press(USER, "Выбрать город")
+        await h.press(USER, "Другие города")
         back = h.find(USER, "Вернуться")
         assert back.icon_custom_emoji_id == "5368324170671202286" and back.style == "primary"
         await h.stop()
@@ -365,7 +371,7 @@ def test_menu_editing(tmp_path):
         await h.click(OWNER, f"x:irow:{item_id}:-1")  # не один → оторвался в свой ряд над ним
         await h.click(OWNER, f"x:irow:{item_id}:-1")  # один → приклеился к «Поиску»
         await h.send(USER, "/start")
-        assert h.labels(USER)[2] == [search.label, "⭐ Избранное", "📢 Наш канал"]
+        assert h.labels(USER)[3] == [search.label, "⭐ Избранное", "📢 Наш канал"]
         assert h.find(USER, "Наш канал").url == "https://t.me/our_channel"
         await h.click(OWNER, f"x:isolo:{item_id}")
         await h.click(OWNER, f"x:iact:{search.id}")
@@ -393,7 +399,7 @@ def test_favorites(tmp_path):
         await h.press(USER, "Gift Shop")
         await h.press(USER, "Из избранного")
         await h.press(USER, "Назад")
-        assert "Здесь появятся магазины" in h.screen(USER).text
+        assert "Пока пусто" in h.screen(USER).text
     run(scenario())
 
 
@@ -401,6 +407,7 @@ def test_application_flow(tmp_path):
     async def scenario():
         h = await Harness(tmp_path).start()
         await h.send(USER, "/start")
+        await h.press(USER, "Ещё")
         await h.press(USER, "Разместить магазин")
         await h.press(USER, "Заполнить заявку")
         assert "Шаг 1 из 6" in h.screen(USER).text
@@ -420,8 +427,9 @@ def test_application_flow(tmp_path):
         assert app_id and any("Новая заявка" in (m.text or "") for m in h.tg.chat(OWNER))
 
         await h.send(USER, "/start")
+        await h.press(USER, "Ещё")
         await h.press(USER, "Разместить магазин")
-        assert "уже на рассмотрении" in h.screen(USER).text
+        assert "уже на проверке" in h.screen(USER).text
 
         await h.send(OWNER, "/admin")
         await h.click(OWNER, f"a:appl:{app_id}")
@@ -453,25 +461,24 @@ def test_languages_and_translation_file(tmp_path):
         await h.send(OWNER, "Қош келдіңіз, {имя}!")
         await h.send(KK, "/start")
         assert h.screen(KK).text == "Қош келдіңіз, U55!"
-        await h.press(KK, "Выбрать город")
+        await h.press(KK, "Другие города")
         assert h.find(KK, "Артқа")
 
         # файл: выгрузка → перевод → загрузка
         await h.click(OWNER, "x:trexp:todo")
         exported = h.tg.documents[-1].decode()
-        assert "=== text/cities/html" in exported and "kk: \n" in exported
-        filled = exported.replace("=== text/cities/html | 🏙 Экран выбора города ===\nru: 🏙 <b>Выберите город</b>\nkk: ",
-                                  "=== text/cities/html | 🏙 Экран выбора города ===\nru: 🏙 <b>Выберите город</b>\n"
-                                  "kk: 🏙 <b>Қаланы таңдаңыз</b>")
-        filled = filled.replace("ru: Здесь пока пусто.\nkk: ", "ru: Здесь пока пусто.\nkk: <b>Бос")  # битый HTML
+        assert "=== text/other_cities/html" in exported and "kk: \n" in exported
+        filled = exported.replace("ru: 🌍 <b>Другие города</b>\nkk: ", "ru: 🌍 <b>Другие города</b>\nkk: 🌍 <b>Басқа қалалар</b>")
+        filled = filled.replace("ru: Здесь пока нет магазинов. Загляните позже.\nkk: ",
+                                "ru: Здесь пока нет магазинов. Загляните позже.\nkk: <b>Бос")  # битый HTML
         h.tg.download_data = filled.encode()
         await h.click(OWNER, "x:trimp")
         await h.send(OWNER, None, document={"file_id": "tr", "file_unique_id": "tr", "file_name": "t.txt",
                                             "file_size": len(filled)})
         assert "Загружено переводов: 3" in h.screen(OWNER).text and "не закрыт" in h.screen(OWNER).text
         await h.send(KK, "/start")
-        await h.press(KK, "Выбрать город")
-        assert "Қаланы таңдаңыз" in h.screen(KK).text
+        await h.press(KK, "Другие города")
+        assert "Басқа қалалар" in h.screen(KK).text
 
         # русский поменяли — перевод помечен устаревшим
         await h.click(OWNER, "x:htm:text:cities")
@@ -546,29 +553,32 @@ def test_errors_go_to_log_channel(tmp_path):
 
 
 def test_row_arrows_move_one_step(tmp_path):
-    """Две кнопки в ряду: «вниз» сначала отрывает кнопку в свой ряд, второе «вниз» — приклеивает к следующему."""
+    """Две кнопки в ряду: «вниз» сначала отрывает кнопку в свой ряд, второе «вниз» — к следующему ряду.
+    Блок городов кнопка перепрыгивает целиком."""
     async def scenario():
         h = await Harness(tmp_path).start()
-        top = next(i for i in h.app.catalog.menu.values() if i.label == "🔥 Топы")
+        top = next(i for i in h.app.catalog.menu.values() if i.label == "🔥 Топ")
+        root = h.app.catalog.root_id
         await h.send(OWNER, "/admin")
+        await h.click(OWNER, f"a:arr:{root}:{top.id}")
+        assert "👉 🔥 Топ" in str(h.labels(OWNER))
+        await h.click(OWNER, f"x:arrmv:{root}:{top.id}:D")
         await h.send(USER, "/start")
-        await h.click(OWNER, f"x:irow:{top.id}:1")
+        assert h.labels(USER)[:3] == [["💎 Премиум"], ["🔥 Топ"], ["Алматы", "Астана"]]
+        await h.click(OWNER, f"x:arrmv:{root}:{top.id}:D")  # перепрыгнула города
         await h.send(USER, "/start")
-        assert h.labels(USER)[:3] == [["💎 Премиум"], ["🔥 Топы"], ["🏙 Выбрать город"]]
-        await h.click(OWNER, f"x:irow:{top.id}:1")
+        assert h.labels(USER)[:4] == [["💎 Премиум"], ["Алматы", "Астана"], ["Шымкент", "🌍 Другие города"], ["🔥 Топ"]]
+        await h.click(OWNER, f"x:arrmv:{root}:{top.id}:D")  # приклеилась к «Поиску»
         await h.send(USER, "/start")
-        assert h.labels(USER)[:2] == [["💎 Премиум"], ["🔥 Топы", "🏙 Выбрать город"]]
-        await h.click(OWNER, f"x:irow:{top.id}:-1")
+        assert h.labels(USER)[3] == ["🔥 Топ", "🔍 Поиск", "⭐ Избранное"]
+        await h.click(OWNER, f"x:arrmv:{root}:{top.id}:R")
         await h.send(USER, "/start")
-        assert h.labels(USER)[:3] == [["💎 Премиум"], ["🔥 Топы"], ["🏙 Выбрать город"]]
-        await h.click(OWNER, f"x:irow:{top.id}:-1")
+        assert h.labels(USER)[3] == ["🔍 Поиск", "🔥 Топ", "⭐ Избранное"]
+        for _ in range(3):  # отрыв от ряда → через блок городов → к «Премиуму»
+            await h.click(OWNER, f"x:arrmv:{root}:{top.id}:U")
         await h.send(USER, "/start")
-        assert h.labels(USER)[0] == ["💎 Премиум", "🔥 Топы"]
-        await h.click(OWNER, f"x:irow:{top.id}:-1")  # снова в своём ряду наверху
-        await h.click(OWNER, f"x:irow:{top.id}:-1")  # уже в самом верху
-        assert "самом верху" in h.screen(OWNER).text
+        assert h.labels(USER)[0] == ["💎 Премиум", "🔥 Топ"], "вернулась наверх"
     run(scenario())
-
 
 def test_video_as_gif_autoplay(tmp_path):
     async def scenario():
@@ -580,6 +590,7 @@ def test_video_as_gif_autoplay(tmp_path):
         await h.click(OWNER, f"x:med:item:{root}")
         await h.send(OWNER, None, video={"file_id": "v", "file_unique_id": "v", "width": 1, "height": 1,
                                          "duration": 3, "mime_type": "video/mp4"})
+        await h.click(OWNER, f"a:imore:{root}")  # редкие действия — на экране «Ещё»
         assert "Сделать GIF" in str(h.labels(OWNER))
         await h.click(OWNER, f"x:mkind:item:{root}")
         assert "Теперь это GIF" in h.screen(OWNER).text
@@ -638,4 +649,34 @@ def test_new_tag_menu_button(tmp_path):
         await h.send(USER, "/start")
         await h.press(USER, "Новинки")
         assert h.labels(USER)[0] == ["Gift Shop"], "метку дали — магазин сам в подборке"
+    run(scenario())
+
+
+def test_existing_install_gets_new_layout_and_texts(tmp_path):
+    """База со старым меню: «Выбрать город» становится блоком городов, «Разместить» и «Язык» уходят в «Ещё»,
+    стандартные тексты обновляются, а свои правки админа остаются."""
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        db = h.app.db
+        root = h.app.catalog.root_id
+        more = next(i for i in h.app.catalog.menu.values() if i.label == "☰ Ещё")
+        # делаем «как было»: старые тексты, старое меню, без флагов обновления
+        await db.execute("UPDATE menu_items SET kind = 'cities', label = '🏙 Выбрать город' WHERE kind = 'city_block'")
+        await db.execute("UPDATE menu_items SET parent_id = ?, row = 4 WHERE parent_id = ?", (root, more.id))
+        await db.execute("DELETE FROM menu_items WHERE id = ?", (more.id,))
+        await db.execute("UPDATE texts SET html = 'Здесь пока пусто.' WHERE key = 'empty'")
+        await db.execute("UPDATE texts SET html = 'Мой текст — с тире' WHERE key = 'flood'")
+        await db.execute("UPDATE menu_items SET html = 'Моё приветствие про Cruise' WHERE id = ?", (root,))
+        await db.execute("DELETE FROM settings WHERE key IN ('layout_v2', 'texts_v2')")
+        await h.stop()
+
+        h2 = await Harness(tmp_path).start()
+        cat = h2.app.catalog
+        assert cat.text("empty").html == "Здесь пока нет магазинов. Загляните позже.", "стандартный текст обновлён"
+        assert cat.text("flood").html == "Мой текст — с тире", "свой текст не тронут"
+        assert cat.menu[cat.root_id].html == "Моё приветствие про Cruise"
+        await h2.send(USER, "/start")
+        assert h2.labels(USER)[1] == ["Алматы", "Астана"] and h2.labels(USER)[-1] == ["☰ Ещё"]
+        await h2.press(USER, "Ещё")
+        assert h2.labels(USER)[:2] == [["📝 Разместить магазин"], ["🌐 Язык"]]
     run(scenario())
