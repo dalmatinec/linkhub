@@ -707,20 +707,24 @@ def test_other_cities_list_shops(tmp_path):
 
 
 def test_operator_button_easy_change(tmp_path):
+    """У продавца несколько кнопок связи, каждая меняется прямо с экрана магазина."""
     async def scenario():
         h = await Harness(tmp_path).start()
-        shop_id = await make_shop(h)  # кнопки: «💬 Написать | @gift_manager», «Канал | t.me/gifts»
-        await h.click(OWNER, f"a:cont:{shop_id}")
-        assert h.labels(OWNER)[:2] == [["💬 Написать"], ["Канал"]]
-        await h.press(OWNER, "Написать")
-        await h.press(OWNER, "Сменить оператора")
-        await h.send(OWNER, "@new_operator")
-        assert h.app.catalog.shops[shop_id].contacts[0].url == "https://t.me/new_operator"
-        await h.click(OWNER, f"a:cont:{shop_id}")
-        await h.press(OWNER, "Добавить оператора")
-        await h.send(OWNER, "@second_op")
-        c = h.app.catalog.shops[shop_id].contacts[-1]
-        assert (c.label, c.url) == ("💬 Написать оператору", "https://t.me/second_op")
+        shop_id = await make_shop(h)  # «💬 Написать | @gift_manager», «Канал | t.me/gifts»
+        await h.click(OWNER, f"a:shop:{shop_id}")
+        assert h.find(OWNER, "💬 Написать → @gift_manager") and h.find(OWNER, "Канал → @gifts")
+        await h.press(OWNER, "Написать → @gift_manager")
+        await h.press(OWNER, "Сменить контакт")
+        await h.send(OWNER, "@new_seller")
+        await h.click(OWNER, f"a:shop:{shop_id}")
+        await h.press(OWNER, "Добавить контакт")
+        await h.send(OWNER, "@second_seller")
+        urls = [c.url for c in h.app.catalog.shops[shop_id].contacts]
+        assert urls == ["https://t.me/new_seller", "https://t.me/gifts", "https://t.me/second_seller"]
+        await h.press(OWNER, "Канал → @gifts")
+        await h.press(OWNER, "Удалить кнопку")
+        assert len(h.app.catalog.shops[shop_id].contacts) == 2
         await h.send(USER, f"/start shop_{shop_id}")
-        assert h.find(USER, "Написать оператору").url.startswith("https://t.me/second_op?text=")
+        assert h.labels(USER)[:2] == [["💬 Написать"], ["💬 Написать оператору"]]
+        assert h.find(USER, "💬 Написать").url.startswith("https://t.me/new_seller?text=")
     run(scenario())

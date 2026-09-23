@@ -90,23 +90,29 @@ ACTIONS: dict[str, tuple[str | None, Handler]] = {}
 INPUTS: dict[str, tuple[str | None, Handler]] = {}
 
 
+def _register(registry: dict, name: str, perm: str | None, fn: Handler) -> None:
+    if name in registry:  # одинаковые имена молча перекрывали бы друг друга
+        raise RuntimeError(f"В админке уже есть обработчик {name!r}")
+    registry[name] = (perm, fn)
+
+
 def view(name: str, perm: str | None = None):
     def deco(fn: Handler) -> Handler:
-        VIEWS[name] = (perm, fn)
+        _register(VIEWS, name, perm, fn)
         return fn
     return deco
 
 
 def action(name: str, perm: str | None = None):
     def deco(fn: Handler) -> Handler:
-        ACTIONS[name] = (perm, fn)
+        _register(ACTIONS, name, perm, fn)
         return fn
     return deco
 
 
 def on_input(name: str, perm: str | None = None):
     def deco(fn: Handler) -> Handler:
-        INPUTS[name] = (perm, fn)
+        _register(INPUTS, name, perm, fn)
         return fn
     return deco
 
