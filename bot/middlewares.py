@@ -32,14 +32,17 @@ class GuardMiddleware(BaseMiddleware):
             return None  # бот работает только в личке
 
         app = self.app
-        await app.touch_user(user.id, user.username, user.first_name)
+        await app.touch_user(user.id, user.username, user.first_name, user.language_code)
         perms = app.perms(user.id)
         data["perms"] = perms
+        lang = app.user_lang(user.id, user.language_code)
+        data["lang"] = lang
+        data["tr"] = tr = app.catalog.tr(lang)
         if perms is None:
             if app.is_banned(user.id):
-                return await self._reject(event, "banned", alert=True)
+                return await self._reject(event, tr.text("banned"), alert=True)
             if self._flooding(user.id):
-                return await self._reject(event, "flood")
+                return await self._reject(event, tr.text("flood"))
         return await handler(event, data)
 
     def _flooding(self, user_id: int) -> bool:
@@ -62,13 +65,16 @@ class GuardMiddleware(BaseMiddleware):
         if 0 < max_strikes <= strikes and minutes > 0:
             self.hits.pop(user_id, None)
             self.strikes.pop(user_id, None)
-            task = asyncio.create_task(self.app.ban(user_id, now() + minutes * 60, "антифлуд"))
+            task = asyncio.create_task(self._auto_ban(user_id, minutes))
             self._tasks.add(task)
             task.add_done_callback(self._tasks.discard)
         return True
 
-    async def _reject(self, event: TelegramObject, text_key: str, alert: bool = False) -> None:
-        html = self.app.catalog.text(text_key).html
+    async def _auto_ban(self, user_id: int, minutes: int) -> None:
+        await self.app.ban(user_id, now() + minutes * 60, "антифлуд")
+        await self.app.log_event(f"🚫 Автобан за флуд: <code>{user_id}</code> на {minutes} мин.")
+
+    async def _reject(self, event: TelegramObject, html: str, alert: bool = False) -> None:
         try:
             if isinstance(event, CallbackQuery):
                 await event.answer(html_to_plain(html)[:190], show_alert=alert)

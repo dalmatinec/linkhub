@@ -178,6 +178,83 @@ MIGRATIONS: list[str] = [
     );
     CREATE INDEX ix_admin_log_ts ON admin_log(ts);
     """,
+    # 2 — категории, избранное, заявки, переводы, язык пользователя, отзывы (задел)
+    """
+    CREATE TABLE categories (
+        id        INTEGER PRIMARY KEY,
+        label     TEXT NOT NULL,
+        icon      TEXT,
+        style     TEXT,
+        position  INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1
+    );
+
+    CREATE TABLE shop_categories (
+        shop_id     INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        category_id INTEGER NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+        PRIMARY KEY (shop_id, category_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX ix_shop_categories_cat ON shop_categories(category_id);
+
+    CREATE TABLE favorites (
+        user_id    INTEGER NOT NULL,
+        shop_id    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (user_id, shop_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX ix_favorites_shop ON favorites(shop_id);
+
+    -- вопросы анкеты «Разместить магазин»
+    CREATE TABLE app_fields (
+        id       INTEGER PRIMARY KEY,
+        label    TEXT NOT NULL,             -- короткое название («Название»)
+        html     TEXT NOT NULL DEFAULT '',  -- вопрос пользователю
+        kind     TEXT NOT NULL DEFAULT 'text',  -- text | media | any
+        role     TEXT NOT NULL DEFAULT '',      -- куда пойдёт в карточку: name|description|price|contacts|cities|media
+        required INTEGER NOT NULL DEFAULT 1,
+        position INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE TABLE applications (
+        id          INTEGER PRIMARY KEY,
+        user_id     INTEGER NOT NULL,
+        answers     TEXT NOT NULL,          -- JSON: [{field_id, label, role, html, plain, media_id}]
+        status      TEXT NOT NULL DEFAULT 'new',  -- new | accepted | rejected
+        shop_id     INTEGER,
+        note        TEXT,
+        reviewed_by INTEGER,
+        created_at  INTEGER NOT NULL,
+        reviewed_at INTEGER
+    );
+    CREATE INDEX ix_applications_status ON applications(status, created_at);
+    CREATE INDEX ix_applications_user ON applications(user_id, status);
+
+    -- переводы: kind/ref/field — что переводим, src_hash — от какой версии русского текста
+    CREATE TABLE translations (
+        kind     TEXT NOT NULL,
+        ref      TEXT NOT NULL,
+        field    TEXT NOT NULL,
+        lang     TEXT NOT NULL,
+        value    TEXT NOT NULL,
+        src_hash TEXT NOT NULL,
+        PRIMARY KEY (kind, ref, field, lang)
+    ) WITHOUT ROWID;
+
+    ALTER TABLE users ADD COLUMN lang TEXT;
+
+    -- отзывы: таблица заложена, логика — позже
+    CREATE TABLE reviews (
+        id         INTEGER PRIMARY KEY,
+        shop_id    INTEGER NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+        user_id    INTEGER NOT NULL,
+        rating     INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+        text       TEXT NOT NULL DEFAULT '',
+        status     TEXT NOT NULL DEFAULT 'pending',  -- pending | published | rejected
+        created_at INTEGER NOT NULL,
+        UNIQUE (shop_id, user_id)
+    );
+    CREATE INDEX ix_reviews_shop ON reviews(shop_id, status);
+    """,
 ]
 
 

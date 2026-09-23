@@ -7,10 +7,10 @@ from aiogram import Bot
 from aiogram.client.session.base import BaseSession
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.methods import (
-    AnswerCallbackQuery, CopyMessage, DeleteMessage, EditMessageMedia, EditMessageText, GetFile, GetMe,
+    AnswerCallbackQuery, CopyMessage, DeleteMessage, ForwardMessage, EditMessageMedia, EditMessageText, GetFile, GetMe,
     SendAnimation, SendDocument, SendMessage, SendPhoto, SendVideo, SetMyCommands, TelegramMethod,
 )
-from aiogram.types import FSInputFile, File, Message, User
+from aiogram.types import BufferedInputFile, File, InputFile, Message, User
 
 
 @dataclass
@@ -32,6 +32,7 @@ class FakeTelegram(BaseSession):
     bad_file_ids: set[str] = field(default_factory=set)
     uploads: int = 0
     download_data: bytes = b""
+    documents: list[bytes] = field(default_factory=list)  # содержимое отправленных ботом файлов
 
     def __post_init__(self) -> None:
         BaseSession.__init__(self)
@@ -71,7 +72,9 @@ class FakeTelegram(BaseSession):
         return self.chat(chat_id)[-1]
 
     def _media_source(self, method: TelegramMethod, src: Any) -> str:
-        if isinstance(src, FSInputFile):
+        if isinstance(src, BufferedInputFile):
+            self.documents.append(src.data)
+        if isinstance(src, InputFile):
             self.uploads += 1
             return f"fid_{next(self._fids)}"
         if src in self.bad_file_ids:
@@ -118,6 +121,8 @@ class FakeTelegram(BaseSession):
             return File(file_id=method.file_id, file_unique_id=method.file_id, file_path="f/x")
         if isinstance(method, CopyMessage):
             return self._store(bot, method.chat_id, "text", None, text="copy")
+        if isinstance(method, ForwardMessage):
+            return self._store(bot, method.chat_id, "text", None, text="forward")
         raise NotImplementedError(type(method).__name__)
 
     def _store(self, bot: Bot, chat_id: int, kind: str, markup: Any, text: str | None = None,

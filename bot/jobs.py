@@ -51,8 +51,9 @@ async def check_tag_expiry(app: App) -> None:
     )
     for r in soon:
         left = max(1, (r["expires_at"] - t) // 3600)
-        await app.notify_admins(
-            f"⏳ Через ~{left} ч у «{escape(r['shop'])}» закончится метка «{escape(r['tag'])}».", perm="shops")
+        msg = f"⏳ Через ~{left} ч у «{escape(r['shop'])}» закончится метка «{escape(r['tag'])}»."
+        await app.notify_admins(msg, perm="shops")
+        await app.log_event(msg)
         await db.execute("UPDATE shop_tags SET notified = 1 WHERE shop_id = ? AND tag_id = ?", (r["shop_id"], r["tag_id"]))
 
     expired = await db.fetchall(
@@ -67,7 +68,9 @@ async def check_tag_expiry(app: App) -> None:
     await cat.reload()
     for r in expired:
         await app.log_action(0, "shop.tag_expired", f"{r['shop_id']}/{r['tag_id']}")
-        await app.notify_admins(f"⌛️ У «{escape(r['shop'])}» снята метка «{escape(r['tag'])}» — срок истёк.", perm="shops")
+        msg = f"⌛️ У «{escape(r['shop'])}» снята метка «{escape(r['tag'])}» — срок истёк."
+        await app.notify_admins(msg, perm="shops")
+        await app.log_event(msg)
 
 
 async def expire_bans(app: App) -> None:
@@ -96,7 +99,7 @@ async def send_backup(app: App, chat_id: int | None, caption: str) -> str:
     if path.stat().st_size > SEND_LIMIT:
         path = await make_backup(app, with_media=False)
         note = "\n⚠️ Медиа не влезли в лимит Telegram (50 МБ) — отправлена только база. Полный архив лежит на сервере в data/backups."
-    targets = [chat_id] if chat_id else ([int(app.catalog.setting("backup_chat_id", 0))] if app.catalog.setting("backup_chat_id", 0) else sorted(app.config.owner_ids))
+    targets = [chat_id] if chat_id else ([app.log_chat] if app.log_chat else sorted(app.config.owner_ids))
     for target in targets:
         try:
             await app.bot.send_document(target, FSInputFile(path), caption=caption + note, disable_notification=True)

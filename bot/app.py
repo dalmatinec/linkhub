@@ -31,28 +31,60 @@ class App:
     known_users: set[int] = field(default_factory=set)
     banned: dict[int, int | None] = field(default_factory=dict)  # user_id -> until (None = навсегда)
     screens: dict[int, Screen] = field(default_factory=dict)
+    langs: dict[int, str] = field(default_factory=dict)  # явно выбранный язык
     _seen: dict[int, tuple[int, str | None, str | None]] = field(default_factory=dict)
     _screen_ids: dict[int, int] = field(default_factory=dict)
     _events: list[tuple[int, int, str, int]] = field(default_factory=list)
 
     async def load_users(self) -> None:
         self.known_users = {r["id"] for r in await self.db.fetchall("SELECT id FROM users")}
+        self.langs = {r["id"]: r["lang"] for r in await self.db.fetchall("SELECT id, lang FROM users WHERE lang IS NOT NULL")}
         self.banned = {
             r["id"]: r["banned_until"]
             for r in await self.db.fetchall("SELECT id, banned_until FROM users WHERE is_banned = 1")
         }
 
     # ---------- пользователи ----------
-    async def touch_user(self, user_id: int, username: str | None, first_name: str | None) -> None:
+    async def touch_user(self, user_id: int, username: str | None, first_name: str | None,
+                         telegram_lang: str | None = None) -> None:
         ts = now()
         if user_id not in self.known_users:
             self.known_users.add(user_id)
+            lang = self.catalog.pick_lang(None, telegram_lang)  # язык из настроек Telegram — до ручного выбора
+            self.langs.setdefault(user_id, lang)
             await self.db.execute(
-                "INSERT OR IGNORE INTO users(id, username, first_name, created_at, last_seen) VALUES (?, ?, ?, ?, ?)",
-                (user_id, username, first_name, ts, ts),
+                "INSERT OR IGNORE INTO users(id, username, first_name, created_at, last_seen, lang)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, username, first_name, ts, ts, lang),
             )
             return
         self._seen[user_id] = (ts, username, first_name)
+
+    def user_lang(self, user_id: int, telegram_code: str | None) -> str:
+        return self.catalog.pick_lang(self.langs.get(user_id), telegram_code)
+
+    async def set_lang(self, user_id: int, lang: str) -> None:
+        self.langs[user_id] = lang
+        await self.db.execute("UPDATE users SET lang = ? WHERE id = ?", (lang, user_id))
+
+    # ---------- избранное ----------
+    async def is_favorite(self, user_id: int, shop_id: int) -> bool:
+        return bool(await self.db.fetchval(
+            "SELECT 1 FROM favorites WHERE user_id = ? AND shop_id = ?", (user_id, shop_id)))
+
+    async def toggle_favorite(self, user_id: int, shop_id: int) -> bool:
+        """-> True, если магазин теперь в избранном."""
+        if await self.is_favorite(user_id, shop_id):
+            await self.db.execute("DELETE FROM favorites WHERE user_id = ? AND shop_id = ?", (user_id, shop_id))
+            return False
+        await self.db.execute("INSERT INTO favorites(user_id, shop_id, created_at) VALUES (?, ?, ?)",
+                              (user_id, shop_id, now()))
+        return True
+
+    async def favorite_ids(self, user_id: int) -> list[int]:
+        rows = await self.db.fetchall(
+            "SELECT shop_id FROM favorites WHERE user_id = ? ORDER BY created_at DESC", (user_id,))
+        return [r["shop_id"] for r in rows]
 
     def is_banned(self, user_id: int) -> bool:
         if user_id not in self.banned:
@@ -131,8 +163,27 @@ class App:
             except TelegramAPIError as e:
                 log.warning("Не удалось уведомить админа %s: %s", uid, e)
 
-    async def log_action(self, admin_id: int, action: str, details: str = "") -> None:
+    async def log_action(self, admin_id: int, action: str, details: str = "", pretty: str = "") -> None:
         await self.db.execute(
             "INSERT INTO admin_log(admin_id, action, details, ts) VALUES (?, ?, ?, ?)",
             (admin_id, action, details[:500], now()),
         )
+        if pretty and self.catalog.setting("log_admin_actions", 1):
+            await self.log_event(f"📜 {pretty}")
+
+    # ---------- канал логов ----------
+    @property
+    def log_chat(self) -> int:
+        """Канал для логов, ошибок и бэкапов (0 — не задан)."""
+        return int(self.catalog.setting("log_chat_id", 0) or self.catalog.setting("backup_chat_id", 0) or 0)
+
+    async def log_event(self, html: str, **kwargs) -> bool:
+        chat = self.log_chat
+        if not chat:
+            return False
+        try:
+            await self.bot.send_message(chat, html[:4000], disable_notification=True, **kwargs)
+            return True
+        except TelegramAPIError as e:
+            log.warning("Канал логов недоступен: %s", e)
+            return False

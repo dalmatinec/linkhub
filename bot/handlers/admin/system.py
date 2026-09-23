@@ -11,6 +11,7 @@ from ...catalog import now
 from ...jobs import send_backup
 from ...media import TELEGRAM_DOWNLOAD_LIMIT
 from .core import Ctx, InputError, Rows, ViewResult, action, b, back_btn, on_input, view
+from .journal import describe
 from .shops import fmt_date
 
 # ключ -> (название, минимум, максимум)
@@ -20,6 +21,7 @@ PROTECTION = {
     "flood_strikes": ("Нарушений до автобана (0 — без бана)", 0, 100),
     "flood_ban_minutes": ("Автобан, минут", 0, 100000),
     "report_cooldown_minutes": ("Пауза между жалобами, минут", 0, 10000),
+    "apply_cooldown_hours": ("Пауза между заявками, часов", 0, 10000),
 }
 SETTINGS = {
     "per_row": ("Кнопок в ряду (списки)", 1, 4),
@@ -27,7 +29,6 @@ SETTINGS = {
     "max_media_mb": ("Лимит медиа, МБ", 1, 20),
     "tz_offset": ("Часовой пояс, UTC+", -12, 14),
     "backup_hour": ("Час автобэкапа", 0, 23),
-    "backup_chat_id": ("Чат для бэкапов (0 — владельцам)", -10 ** 15, 10 ** 15),
     "expiry_notify_hours": ("Напомнить о сроке метки за, ч", 1, 720),
 }
 ALL_SETTINGS = {**PROTECTION, **SETTINGS}
@@ -59,11 +60,18 @@ async def view_protection(ctx: Ctx) -> ViewResult:
 async def view_settings(ctx: Ctx) -> ViewResult:
     app = ctx.app
     rows = settings_rows(ctx, SETTINGS, "set")
+    log_chat = app.log_chat
+    rows.insert(0, [b(f"📡 Канал логов и бэкапов: {log_chat or 'не задан'}", "x:logchat")])
+    rows.insert(1, [b(f"📜 Дублировать действия админов в канал: "
+                      f"{'да' if app.catalog.setting('log_admin_actions', 1) else 'нет'}",
+                      "x:settog:log_admin_actions:set")])
     rows.append([b(f"🔥 Прогреть медиа ({len(app.media.pending_warmup())} без file_id)", "x:warm"),
                  b("🧹 Удалить лишние медиа", "x:gc")])
     rows.append(back_btn("a:home"))
     total = sum(m.size for m in app.media.files.values()) / 1048576
     html = ("⚙️ <b>Настройки</b>\n\n"
+            "📡 <b>Канал логов</b> — один приватный канал, куда бот шлёт ошибки, бэкапы, новые заявки, жалобы, "
+            "автобаны и действия админов. Пока не задан — бэкапы приходят владельцам в личку.\n\n"
             f"Медиафайлов: <b>{len(app.media.files)}</b> ({total:.1f} МБ)\n"
             "«Прогреть» — заранее загрузить все медиа в Telegram (нужно после смены токена; "
             "делается и автоматически при запуске).")
@@ -98,6 +106,42 @@ async def act_setting_toggle(ctx: Ctx, key: str, back: str):
     await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES (?, ?)", (key, json.dumps(value)))
     await ctx.reload()
     return f"a:{back}"
+
+
+@action("logchat", "settings")
+async def act_log_chat(ctx: Ctx):
+    return await ctx.ask(
+        "logchat",
+        "📡 <b>Подключение канала логов</b>\n\n"
+        "1. Создайте приватный канал.\n"
+        "2. Добавьте этого бота в канал администратором (с правом публиковать сообщения).\n"
+        "3. Перешлите сюда любое сообщение из канала — или отправьте его ID (вида -100…).\n\n"
+        "Отправьте <code>0</code>, чтобы отключить канал.",
+        "a:set",
+    )
+
+
+@on_input("logchat", "settings")
+async def in_log_chat(ctx: Ctx, message: Message):
+    chat_id = None
+    origin = message.forward_origin
+    if origin is not None and getattr(origin, "chat", None) is not None:
+        chat_id = origin.chat.id
+    elif (message.text or "").strip().lstrip("-").isdigit():
+        chat_id = int(message.text.strip())
+    if chat_id is None:
+        raise InputError("Перешлите сообщение из канала или отправьте его ID.")
+    if chat_id:
+        try:
+            await ctx.app.bot.send_message(chat_id, "✅ Канал подключён: сюда будут приходить логи, ошибки и бэкапы.")
+        except Exception as e:
+            raise InputError(f"Бот не может писать в этот канал ({e}). Добавьте бота администратором.")
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('log_chat_id', ?)", (str(chat_id),))
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('backup_chat_id', '0')")
+    await ctx.reload()
+    await ctx.log("logchat.set", str(chat_id))
+    ctx.notice = "✅ Канал логов подключён." if chat_id else "Канал логов отключён."
+    return "a:set"
 
 
 @action("warm", "settings")
@@ -153,7 +197,8 @@ async def view_backup(ctx: Ctx) -> ViewResult:
     html = ("💾 <b>Бэкап</b>\n\n"
             "Архив = база (все тексты, кнопки, магазины, пользователи) + все медиафайлы.\n"
             f"Автоматически — каждый день в {cat.setting('backup_hour')}:00 "
-            f"(UTC+{cat.setting('tz_offset')}), последний: {cat.setting('last_backup_day', '—')}.\n\n"
+            f"(UTC+{cat.setting('tz_offset')}), последний: {cat.setting('last_backup_day', '—')}.\n"
+            f"Куда: {'в канал логов' if ctx.app.log_chat else 'владельцам в личку (подключите канал в ⚙️ Настройках)'}.\n\n"
             "<b>Переезд на новый токен:</b> меняете BOT_TOKEN в .env и перезапускаете — всё на месте, медиа "
             "перезальются сами.\n"
             "<b>Переезд на новый сервер:</b> копируете папку data целиком, либо восстанавливаете из архива.")
@@ -203,44 +248,6 @@ async def in_backup_restore(ctx: Ctx, message: Message):
 
 
 # ---------- журнал ----------
-ACTION_NAMES = {
-    "shop.create": "создал магазин", "shop.delete": "удалил магазин", "shop.publish": "опубликовал магазин",
-    "shop.hide": "скрыл магазин", "shop.tag_on": "поставил метку", "shop.tag_off": "снял метку",
-    "shop.tag_expired": "срок метки истёк", "shop.tag_expiry": "изменил срок метки", "shop.contacts": "изменил контакты",
-    "shop.verified": "переключил «Проверенный»", "menu.create": "добавил кнопку меню", "menu.delete": "удалил кнопку меню",
-    "menu.toggle": "скрыл/показал кнопку меню", "city.create": "добавил города", "city.delete": "удалил город",
-    "tag.create": "создал метку", "tag.delete": "удалил метку", "user.ban": "забанил", "user.unban": "разбанил",
-    "admin.add": "добавил админа", "admin.remove": "снял админа", "admin.perms": "изменил права админа",
-    "broadcast.start": "запустил рассылку", "backup.create": "сделал бэкап", "backup.restore": "восстановил из бэкапа",
-    "settings": "изменил настройку", "report.done": "закрыл жалобу",
-}
-# универсальные правки: «<что>.<поле>»
-OBJECT_NAMES = {"item": "кнопка меню", "text": "текст", "btn": "системная кнопка", "city": "город", "shop": "магазин",
-                "tag": "метка"}
-FIELD_NAMES = {"label": "изменил текст кнопки", "html": "изменил текст", "media": "изменил медиа",
-               "media_removed": "убрал медиа"}
-
-
-def describe(ctx: Ctx, action: str, details: str) -> str:
-    """Понятная строка журнала вместо служебных ключей."""
-    from .content import BUTTON_NAMES, TEXT_NAMES
-    cat = ctx.app.catalog
-    if action in ACTION_NAMES:
-        return f"{ACTION_NAMES[action]} {escape(details[:60])}"
-    obj, _, field = action.partition(".")
-    what = FIELD_NAMES.get(field, field)
-    key = details.split(":", 1)[0]
-    name = {
-        "text": lambda: TEXT_NAMES.get(key, "текст"),
-        "btn": lambda: BUTTON_NAMES.get(key, "кнопка"),
-        "shop": lambda: cat.shops[int(key)].label if key.isdigit() and int(key) in cat.shops else f"#{key}",
-        "item": lambda: (cat.menu[int(key)].label or "главное меню") if key.isdigit() and int(key) in cat.menu else f"#{key}",
-        "city": lambda: cat.cities[int(key)].label if key.isdigit() and int(key) in cat.cities else f"#{key}",
-        "tag": lambda: cat.tags[int(key)].label if key.isdigit() and int(key) in cat.tags else f"#{key}",
-    }.get(obj, lambda: details)()
-    return f"{what} — {OBJECT_NAMES.get(obj, obj)} «{escape(str(name)[:40])}»"
-
-
 @view("log", "log")
 async def view_log(ctx: Ctx, page: str = "0") -> ViewResult:
     p = max(0, int(page))
@@ -253,7 +260,7 @@ async def view_log(ctx: Ctx, page: str = "0") -> ViewResult:
     lines = [
         f"<code>{fmt_date(r['ts'], tz)}</code> "
         f"{'🤖 бот' if r['admin_id'] == 0 else escape(names.get(r['admin_id']) or str(r['admin_id']))}: "
-        f"{describe(ctx, r['action'], r['details'])}"
+        f"{describe(ctx.app, r['action'], r['details'])}"
         for r in rows_db[:size]
     ]
     nav = []

@@ -1,5 +1,6 @@
 """Кэш каталога в памяти. Пользователи читают только отсюда, база трогается лишь при правках.
 После любой правки в админке вызывается `reload()` — полная перезагрузка занимает миллисекунды."""
+import hashlib
 import json
 import time
 from dataclasses import dataclass, field
@@ -63,6 +64,27 @@ class City:
 
 
 @dataclass(slots=True)
+class Category:
+    id: int
+    label: str
+    icon: str | None
+    style: str | None
+    position: int
+    is_active: bool
+
+
+@dataclass(slots=True)
+class AppField:
+    id: int
+    label: str
+    html: str
+    kind: str       # text | media | any
+    role: str       # name | description | price | contacts | cities | media | ''
+    required: bool
+    position: int
+
+
+@dataclass(slots=True)
 class Contact:
     id: int
     label: str
@@ -85,6 +107,7 @@ class Shop:
     is_active: bool
     tags: dict[int, int | None] = field(default_factory=dict)  # tag_id -> expires_at
     cities: set[int] = field(default_factory=set)
+    categories: set[int] = field(default_factory=set)
     contacts: list[Contact] = field(default_factory=list)
     search_key: str = ""
 
@@ -101,12 +124,21 @@ class Catalog:
         self.cities: dict[int, City] = {}
         self.shops: dict[int, Shop] = {}
         self.admins: dict[int, set[str]] = {}
+        self.categories: dict[int, Category] = {}
+        self.fields: list[AppField] = []
+        # (kind, ref, field, lang) -> (перевод, хэш русского текста, с которого переводили)
+        self.translations: dict[tuple[str, str, str, str], tuple[str, str]] = {}
         # Готовые отсортированные выборки
         self.main_cities: list[City] = []
         self.other_cities: list[City] = []
         self.by_tag: dict[int, list[Shop]] = {}
         self.by_city: dict[int, list[Shop]] = {}
         self.all_shops: list[Shop] = []
+        self.active_categories: list[Category] = []
+        self.by_category: dict[int, list[Shop]] = {}
+        self.by_city_category: dict[tuple[int, int], list[Shop]] = {}
+        self.city_categories: dict[int, list[Category]] = {}
+        self._tr_cache: dict[str, "Tr"] = {}
 
     # ---------- загрузка ----------
     async def reload(self) -> None:
@@ -137,6 +169,20 @@ class Catalog:
             for r in await db.fetchall("SELECT * FROM cities ORDER BY position, id")
         }
 
+        self.categories = {
+            r["id"]: Category(r["id"], r["label"], r["icon"], r["style"], r["position"], bool(r["is_active"]))
+            for r in await db.fetchall("SELECT * FROM categories ORDER BY position, id")
+        }
+        self.fields = [
+            AppField(r["id"], r["label"], r["html"], r["kind"], r["role"], bool(r["required"]), r["position"])
+            for r in await db.fetchall("SELECT * FROM app_fields ORDER BY position, id")
+        ]
+        self.translations = {
+            (r["kind"], r["ref"], r["field"], r["lang"]): (r["value"], r["src_hash"])
+            for r in await db.fetchall("SELECT * FROM translations")
+        }
+        self._tr_cache = {}
+
         shops: dict[int, Shop] = {}
         for r in await db.fetchall("SELECT * FROM shops ORDER BY position, id"):
             shops[r["id"]] = Shop(
@@ -150,9 +196,15 @@ class Catalog:
         for r in await db.fetchall("SELECT shop_id, city_id FROM shop_cities"):
             if r["shop_id"] in shops:
                 shops[r["shop_id"]].cities.add(r["city_id"])
+        for r in await db.fetchall("SELECT shop_id, category_id FROM shop_categories"):
+            if r["shop_id"] in shops:
+                shops[r["shop_id"]].categories.add(r["category_id"])
         for r in await db.fetchall("SELECT * FROM shop_contacts ORDER BY position, id"):
             if r["shop_id"] in shops:
                 shops[r["shop_id"]].contacts.append(Contact(r["id"], r["label"], r["url"], r["icon"], r["style"]))
+        for (kind, ref, fld, _), (value, _) in self.translations.items():  # поиск и по переводам
+            if kind == "shop" and ref.isdigit() and int(ref) in shops:
+                shops[int(ref)].search_key += "\n" + _plain(value).casefold()
         self.shops = shops
 
         self.admins = {r["user_id"]: set(filter(None, r["perms"].split(","))) for r in await db.fetchall("SELECT * FROM admins")}
@@ -177,6 +229,20 @@ class Catalog:
             lst.sort(key=lambda s: (s.position, s.id))
         for lst in self.by_city.values():
             lst.sort(key=self.shop_rank)
+
+        self.active_categories = [c for c in self.categories.values() if c.is_active]
+        active_cat_ids = {c.id for c in self.active_categories}
+        self.by_category = {c.id: [] for c in self.active_categories}
+        self.by_city_category = {}
+        for shop in self.all_shops:  # all_shops уже отсортирован по рангу
+            for cat_id in shop.categories & active_cat_ids:
+                self.by_category[cat_id].append(shop)
+                for city_id in shop.cities:
+                    self.by_city_category.setdefault((city_id, cat_id), []).append(shop)
+        self.city_categories = {
+            city_id: [c for c in self.active_categories if (city_id, c.id) in self.by_city_category]
+            for city_id in self.cities
+        }
 
     def shop_rank(self, shop: Shop) -> tuple[int, int, int]:
         """Сначала магазины с меткой повыше (Премиум, потом Топ), потом остальные."""
@@ -203,6 +269,32 @@ class Catalog:
             return []
         return [s for s in self.all_shops if all(w in s.search_key for w in words)][:limit]
 
+    # ---------- языки ----------
+    @property
+    def base_lang(self) -> str:
+        return self.setting("base_lang", "ru")
+
+    @property
+    def languages(self) -> dict[str, str]:
+        """Включённые языки: код -> название. Базовый всегда первый."""
+        names = self.setting("languages", {"ru": "Русский"})
+        enabled = self.setting("enabled_langs", [self.base_lang])
+        codes = [self.base_lang] + [c for c in enabled if c != self.base_lang and c in names]
+        return {c: names.get(c, c) for c in codes}
+
+    def pick_lang(self, stored: str | None, telegram_code: str | None) -> str:
+        langs = self.languages
+        if stored in langs:
+            return stored
+        code = (telegram_code or "").split("-")[0].lower()
+        return code if code in langs else self.base_lang
+
+    def tr(self, lang: str) -> "Tr":
+        t = self._tr_cache.get(lang)
+        if t is None:
+            t = self._tr_cache[lang] = Tr(self, lang)
+        return t
+
     def perms_of(self, user_id: int, owners: frozenset[int]) -> set[str] | None:
         """None — не админ. Владельцы из .env имеют все права."""
         if user_id in owners:
@@ -212,3 +304,41 @@ class Catalog:
 
 def now() -> int:
     return int(time.time())
+
+
+def src_hash(value: str) -> str:
+    return hashlib.sha1(value.encode()).hexdigest()[:12]
+
+
+def _plain(html: str) -> str:
+    import re
+    return re.sub(r"<[^>]+>", "", html)
+
+
+class Tr:
+    """Тексты каталога на языке пользователя. Нет перевода — показывается базовый (русский) текст."""
+    __slots__ = ("cat", "lang", "is_base")
+
+    def __init__(self, cat: Catalog, lang: str) -> None:
+        self.cat = cat
+        self.lang = lang
+        self.is_base = lang == cat.base_lang
+
+    def get(self, kind: str, ref: object, fld: str, base: str) -> str:
+        if self.is_base or not base:
+            return base
+        found = self.cat.translations.get((kind, str(ref), fld, self.lang))
+        return found[0] if found else base
+
+    def text(self, key: str) -> str:
+        return self.get("text", key, "html", self.cat.text(key).html)
+
+    def button(self, key: str) -> Button:
+        b = self.cat.button(key)
+        return Button(b.key, self.get("btn", key, "label", b.label), b.icon, b.style)
+
+    def label(self, kind: str, obj: Any) -> str:
+        return self.get(kind, obj.id, "label", obj.label)
+
+    def html(self, kind: str, obj: Any) -> str:
+        return self.get(kind, obj.id, "html", obj.html)

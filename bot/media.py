@@ -3,6 +3,7 @@
 Нет ни file_id, ни файла → возвращаем None, вызывающий код покажет экран без медиа."""
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from dataclasses import dataclass
@@ -218,6 +219,11 @@ class MediaStore:
                    UNION SELECT media_id FROM menu_items WHERE media_id IS NOT NULL
                    UNION SELECT media_id FROM shops WHERE media_id IS NOT NULL)"""
         )
+        in_applications = set()  # медиа из заявок храним, пока заявка не разобрана и ещё 30 дней после
+        for a in await self.db.fetchall("SELECT answers FROM applications WHERE status = 'new' OR created_at > ?",
+                                        (int(time.time()) - 30 * 86400,)):
+            in_applications |= {x.get("media_id") for x in json.loads(a["answers"])}
+        rows = [r for r in rows if r["id"] not in in_applications]
         for r in rows:
             m = self.files.pop(r["id"], None)
             self.file_ids.pop(r["id"], None)

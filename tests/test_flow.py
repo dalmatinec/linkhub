@@ -125,7 +125,8 @@ def test_user_navigation(tmp_path):
         assert (USER, start_id) not in h.tg.messages, "/start пользователя удаляется"
         scr = h.screen(USER)
         assert "Добро пожаловать, U42" in scr.text
-        assert h.labels(USER) == [["💎 Премиум", "🔥 Топы"], ["🏙 Выбрать город"], ["🔍 Поиск"]]
+        assert h.labels(USER) == [["💎 Премиум", "🔥 Топы"], ["🏙 Выбрать город"], ["🔍 Поиск", "⭐ Избранное"],
+                                  ["📝 Разместить магазин", "🌐 Язык"]]
         assert h.find(USER, "Премиум").style == "primary"
 
         await h.press(USER, "Выбрать город")
@@ -163,6 +164,7 @@ async def make_shop(h: Harness, name: str = "Gift Shop") -> int:
     almaty = next(c.id for c in h.app.catalog.cities.values() if c.label == "Алматы")
     await h.click(OWNER, f"a:scity:{shop_id}:0")
     await h.click(OWNER, f"x:sct:{shop_id}:{almaty}:0")
+    await h.click(OWNER, f"x:scat:{shop_id}:1")  # категория VPN
     await h.click(OWNER, f"x:cset:{shop_id}")
     await h.send(OWNER, "💬 Написать | @gift_manager\nКанал | t.me/gifts")
     await h.click(OWNER, f"x:sact:{shop_id}")
@@ -184,13 +186,25 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         await h.press(USER, "Gift Shop")
         card = h.screen(USER)
         assert "<b>Подарки</b>" in card.text
-        assert h.labels(USER) == [["💬 Написать"], ["Канал"], ["🚩 Пожаловаться"], ["◀️ Назад"]]
+        assert h.labels(USER) == [["💬 Написать"], ["Канал"], ["⭐ В избранное", "🚩 Пожаловаться"], ["◀️ Назад"]]
         await h.press(USER, "Назад")
         assert h.labels(USER)[0] == ["Gift Shop"]
 
         await h.press(USER, "Назад")
         await h.press(USER, "Выбрать город")
         await h.press(USER, "Алматы")
+        assert h.labels(USER)[0] == ["🔐 VPN", "📋 Все магазины"], "в городе сначала категории"
+        await h.press(USER, "VPN")
+        assert "VPN" in h.screen(USER).text and h.labels(USER)[0] == ["Gift Shop"]
+        await h.press(USER, "Gift Shop")
+        await h.press(USER, "Назад")
+        assert h.labels(USER)[0] == ["Gift Shop"], "назад из карточки — в ту же категорию"
+        await h.press(USER, "Назад")
+        await h.press(USER, "Все магазины")
+        assert h.labels(USER)[0] == ["Gift Shop"]
+        await h.click(OWNER, "x:cattog")  # категории в городе выключены — сразу магазины
+        await h.click(USER, f"y:{next(c.id for c in h.app.catalog.cities.values() if c.label == 'Алматы')}:"
+                            f"{next(i.id for i in h.app.catalog.menu.values() if i.kind == 'cities')}:0")
         assert h.labels(USER)[0] == ["Gift Shop"]
 
         # поиск
@@ -341,18 +355,184 @@ def test_menu_editing(tmp_path):
         await h.click(OWNER, f"x:iurl:{item_id}")
         await h.send(OWNER, "@our_channel")
         search = next(i for i in h.app.catalog.menu.values() if i.kind == "search")
-        await h.click(OWNER, f"x:irow:{item_id}:-1")  # в ряд к «Поиску»
+        await h.click(OWNER, f"x:irow:{item_id}:-1")  # в ряд к «Разместить магазин»
+        await h.click(OWNER, f"x:irow:{item_id}:-1")  # ещё выше — к «Поиску»
         await h.send(USER, "/start")
-        assert h.labels(USER)[-1] == [search.label, "📢 Наш канал"]
+        assert h.labels(USER)[2] == [search.label, "⭐ Избранное", "📢 Наш канал"]
         assert h.find(USER, "Наш канал").url == "https://t.me/our_channel"
         await h.click(OWNER, f"x:isolo:{item_id}")
         await h.click(OWNER, f"x:iact:{search.id}")
         await h.send(USER, "/start")
-        assert h.labels(USER)[-1] == ["📢 Наш канал"] and ["🔍 Поиск"] not in h.labels(USER)
+        assert ["📢 Наш канал"] in h.labels(USER) and all("Поиск" not in b for r in h.labels(USER) for b in r)
         await h.click(OWNER, "a:log:0")
         log_text = h.screen(OWNER).text
         assert "добавил кнопку меню" in log_text and "item." not in log_text, "журнал по-русски"
         await h.click(OWNER, "a:text:city_shops")
         assert "{город}" in h.screen(OWNER).text and "city_shops" not in h.screen(OWNER).text
         await h.stop()
+    run(scenario())
+
+
+def test_favorites(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)
+        await h.send(USER, f"/start shop_{shop_id}")
+        await h.press(USER, "В избранное")
+        assert h.find(USER, "Из избранного")
+        await h.send(USER, "/start")
+        await h.press(USER, "Избранное")
+        assert h.labels(USER)[0] == ["Gift Shop"]
+        await h.press(USER, "Gift Shop")
+        await h.press(USER, "Из избранного")
+        await h.press(USER, "Назад")
+        assert "Здесь появятся магазины" in h.screen(USER).text
+    run(scenario())
+
+
+def test_application_flow(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await h.send(USER, "/start")
+        await h.press(USER, "Разместить магазин")
+        await h.press(USER, "Заполнить заявку")
+        assert "Шаг 1 из 6" in h.screen(USER).text
+        await h.send(USER, "Star Shop")
+        await h.send(USER, None, photo=[{"file_id": "p", "file_unique_id": "p", "width": 1, "height": 1}])
+        assert "другой ответ" in h.screen(USER).text, "на текстовый вопрос фото не принимается"
+        await h.send(USER, "Продаём звёзды и подарки")
+        await h.press(USER, "Пропустить")  # прайс
+        await h.send(USER, "@star_seller\nhttps://t.me/star_channel")
+        await h.send(USER, "Алматы, Астана")
+        h.tg.download_data = b"logo"
+        await h.send(USER, None, photo=[{"file_id": "logo", "file_unique_id": "l", "width": 1, "height": 1}])
+        assert "Проверьте заявку" in h.screen(USER).text and "Star Shop" in h.screen(USER).text
+        assert len(h.tg.chat(USER)) == 1, "ответы удаляются, экран один"
+        await h.press(USER, "Отправить")
+        app_id = await h.app.db.fetchval("SELECT id FROM applications")
+        assert app_id and any("Новая заявка" in (m.text or "") for m in h.tg.chat(OWNER))
+
+        await h.send(USER, "/start")
+        await h.press(USER, "Разместить магазин")
+        assert "уже на рассмотрении" in h.screen(USER).text
+
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, f"a:appl:{app_id}")
+        assert "Star Shop" in h.screen(OWNER).text
+        await h.click(OWNER, f"x:aplok:{app_id}")
+        shop = next(s for s in h.app.catalog.shops.values() if s.label == "Star Shop")
+        assert not shop.is_active and shop.media_id
+        assert [c.url for c in shop.contacts] == ["https://t.me/star_seller", "https://t.me/star_channel"]
+        assert {h.app.catalog.cities[c].label for c in shop.cities} == {"Алматы", "Астана"}
+        assert any("одобрена" in (m.text or "") for m in h.tg.chat(USER)), "автору пришло уведомление"
+    run(scenario())
+
+
+def test_languages_and_translation_file(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        KK = 55
+        await h.feed(message={"message_id": 1, "date": 0, "chat": {"id": KK, "type": "private"},
+                              "from": {**h._user(KK), "language_code": "kk"}, "text": "/start",
+                              "entities": [{"type": "bot_command", "offset": 0, "length": 6}]})
+        assert h.app.langs[KK] == "kk"
+        assert "Добро пожаловать" in h.screen(KK).text, "нет перевода — показывается русский"
+
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "x:tred:btn:back:label:kk")
+        await h.send(OWNER, "◀️ Артқа")
+        root = h.app.catalog.root_id
+        await h.click(OWNER, "x:tred:item:%d:html:kk" % root)
+        await h.send(OWNER, "Қош келдіңіз, {имя}!")
+        await h.send(KK, "/start")
+        assert h.screen(KK).text == "Қош келдіңіз, U55!"
+        await h.press(KK, "Выбрать город")
+        assert h.find(KK, "Артқа")
+
+        # файл: выгрузка → перевод → загрузка
+        await h.click(OWNER, "x:trexp:todo")
+        exported = h.tg.documents[-1].decode()
+        assert "=== text/cities/html" in exported and "kk: \n" in exported
+        filled = exported.replace("=== text/cities/html | 🏙 Экран выбора города ===\nru: 🏙 <b>Выберите город</b>\nkk: ",
+                                  "=== text/cities/html | 🏙 Экран выбора города ===\nru: 🏙 <b>Выберите город</b>\n"
+                                  "kk: 🏙 <b>Қаланы таңдаңыз</b>")
+        filled = filled.replace("ru: Здесь пока пусто.\nkk: ", "ru: Здесь пока пусто.\nkk: <b>Бос")  # битый HTML
+        h.tg.download_data = filled.encode()
+        await h.click(OWNER, "x:trimp")
+        await h.send(OWNER, None, document={"file_id": "tr", "file_unique_id": "tr", "file_name": "t.txt",
+                                            "file_size": len(filled)})
+        assert "Загружено переводов: 3" in h.screen(OWNER).text and "не закрыт" in h.screen(OWNER).text
+        await h.send(KK, "/start")
+        await h.press(KK, "Выбрать город")
+        assert "Қаланы таңдаңыз" in h.screen(KK).text
+
+        # русский поменяли — перевод помечен устаревшим
+        await h.click(OWNER, "x:htm:text:cities")
+        await h.send(OWNER, "🏙 Город?")
+        await h.click(OWNER, "a:trl:text:cities")
+        assert "⚠️" in h.screen(OWNER).text
+
+        # ручной выбор языка
+        await h.press(KK, "Артқа")
+        await h.click(KK, f"L:en")
+        assert h.app.langs[KK] == "en"
+    run(scenario())
+
+
+def test_broadcast_forward_and_log_channel(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await h.send(USER, "/start")
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "x:logchat")
+        await h.send(OWNER, "-100777")
+        assert h.app.log_chat == -100777
+        assert any("Канал подключён" in (m.text or "") for m in h.tg.chat(-100777))
+
+        await h.click(OWNER, "x:bcnew")
+        msg_id = await h.send(OWNER, "Новости!")
+        await h.click(OWNER, f"a:bcc:{msg_id}:fwd:all")
+        assert "Пересылкой" in h.screen(OWNER).text
+        await h.click(OWNER, f"x:bcgo:{msg_id}:fwd:all")
+        from bot.handlers.admin import people
+        await people.broadcast_task
+        assert any(m.text == "forward" for m in h.tg.chat(USER))
+        assert any("Рассылка завершена" in (m.text or "") for m in h.tg.chat(-100777)), "отчёт в канал логов"
+        assert any("рассылку" in (m.text or "") for m in h.tg.chat(-100777)), "действие админа в канал логов"
+    run(scenario())
+
+
+def test_upgrade_from_first_version(tmp_path):
+    """База первой версии обновляется миграцией: данные на месте, новые таблицы и категории появились."""
+    async def scenario():
+        import aiosqlite
+        from bot.db import MIGRATIONS
+        async with aiosqlite.connect(tmp_path / "bot.db") as conn:
+            await conn.executescript(f"BEGIN;{MIGRATIONS[0]}\nPRAGMA user_version=1;COMMIT;")
+            await conn.execute("INSERT INTO shops(label, created_at, updated_at) VALUES ('Old Shop', 0, 0)")
+            await conn.commit()
+        h = await Harness(tmp_path).start()
+        assert await h.app.db.fetchval("PRAGMA user_version") == len(MIGRATIONS)
+        assert any(s.label == "Old Shop" for s in h.app.catalog.shops.values())
+        assert len(h.app.catalog.categories) == 5 and len(h.app.catalog.fields) == 6
+    run(scenario())
+
+
+def test_errors_go_to_log_channel(tmp_path):
+    async def scenario():
+        from bot.telelog import TelegramLogHandler
+        h = await Harness(tmp_path).start()
+        await h.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('log_chat_id', '-100500')")
+        await h.app.catalog.reload()
+        handler = TelegramLogHandler(h.app)
+        task = asyncio.create_task(handler.run())
+        try:
+            raise ValueError("сломалось")
+        except ValueError:
+            handler.emit(logging.LogRecord("bot.test", logging.ERROR, __file__, 1, "Упало", None,
+                                           __import__("sys").exc_info()))
+        await asyncio.sleep(0.05)
+        task.cancel()
+        text = h.tg.chat(-100500)[-1].text
+        assert "Ошибка" in text and "ValueError" in text
     run(scenario())

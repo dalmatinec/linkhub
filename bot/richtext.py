@@ -90,3 +90,32 @@ def parse_contacts(message: Message) -> tuple[list[tuple[str, str, str | None]],
             continue
         contacts.append((label, norm, icon))
     return contacts, errors
+
+
+_ALLOWED_TAGS = {"b", "strong", "i", "em", "u", "ins", "s", "strike", "del", "a", "code", "pre",
+                 "tg-spoiler", "tg-emoji", "blockquote", "span"}
+
+
+def html_error(html: str) -> str | None:
+    """Проверяет HTML перевода так, как его примет Telegram: разрешённые теги, всё закрыто."""
+    from html.parser import HTMLParser
+
+    stack: list[str] = []
+    errors: list[str] = []
+
+    class P(HTMLParser):
+        def handle_starttag(self, tag, attrs):
+            if tag not in _ALLOWED_TAGS:
+                errors.append(f"тег <{tag}> не поддерживается")
+            stack.append(tag)
+
+        def handle_endtag(self, tag):
+            if not stack or stack[-1] != tag:
+                errors.append(f"лишний или перепутанный </{tag}>")
+            else:
+                stack.pop()
+
+    P(convert_charrefs=True).feed(html)
+    if stack:
+        errors.append(f"не закрыт <{stack[-1]}>")
+    return errors[0] if errors else None

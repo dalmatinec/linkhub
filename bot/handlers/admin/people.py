@@ -223,29 +223,60 @@ async def act_broadcast_new(ctx: Ctx):
 
 @on_input("bcnew", "broadcast")
 async def in_broadcast(ctx: Ctx, message: Message) -> ViewResult:
-    count = await ctx.app.db.fetchval("SELECT COUNT(*) FROM users WHERE is_blocked = 0 AND is_banned = 0")
-    return (f"☝️ Сообщение выше получат <b>{count}</b> пользователей. Отправляем?",
-            [[b("✅ Отправить", f"x:bcgo:{message.message_id}", "success"), b("✖️ Отмена", "a:bc")]])
+    return await view_broadcast_confirm(ctx, str(message.message_id), "copy", "all")
+
+
+MODES = {"copy": "📨 Копией (от имени бота)", "fwd": "↪️ Пересылкой (с автором/каналом)"}
+
+
+async def _audience(app: App, lang: str) -> list[int]:
+    rows = await app.db.fetchall("SELECT id, lang FROM users WHERE is_blocked = 0 AND is_banned = 0")
+    if lang == "all":
+        return [r["id"] for r in rows]
+    # язык пользователя: выбранный вручную, иначе основной
+    return [r["id"] for r in rows if app.catalog.pick_lang(r["lang"], None) == lang]
+
+
+@view("bcc", "broadcast")
+async def view_broadcast_confirm(ctx: Ctx, message_id: str, mode: str, lang: str) -> ViewResult:
+    app = ctx.app
+    count = len(await _audience(app, lang))
+    langs = {"all": "👥 Всем", **app.catalog.languages}
+    html = (f"☝️ Сообщение выше получат <b>{count}</b> пользователей.\n\n"
+            f"Способ: <b>{MODES[mode]}</b>\n"
+            "• Копией — придёт как сообщение бота, без подписи «Переслано».\n"
+            "• Пересылкой — с подписью «Переслано от …». Удобно, если вы переслали боту пост своего канала: "
+            "у людей будет видно канал и на него можно нажать.\n\n"
+            f"Кому: <b>{langs.get(lang, lang)}</b>")
+    rows: Rows = [
+        [b(("• " if m == mode else "") + t.split(" (")[0], f"a:bcc:{message_id}:{m}:{lang}") for m, t in MODES.items()],
+        [b(("• " if code == lang else "") + name, f"a:bcc:{message_id}:{mode}:{code}") for code, name in langs.items()],
+        [b("✅ Отправить", f"x:bcgo:{message_id}:{mode}:{lang}", "success"), b("✖️ Отмена", "a:bc")],
+    ]
+    return html, rows
 
 
 @action("bcgo", "broadcast")
-async def act_broadcast_go(ctx: Ctx, message_id: str):
+async def act_broadcast_go(ctx: Ctx, message_id: str, mode: str = "copy", lang: str = "all"):
     global broadcast_task
     if broadcast_task is not None and not broadcast_task.done():
         return "a:bc"
-    broadcast_task = asyncio.create_task(run_broadcast(ctx.app, ctx.user_id, ctx.chat_id, int(message_id)))
-    await ctx.log("broadcast.start", message_id)
+    ids = await _audience(ctx.app, lang)
+    broadcast_task = asyncio.create_task(
+        run_broadcast(ctx.app, ctx.user_id, ctx.chat_id, int(message_id), ids, forward=mode == "fwd"))
+    await ctx.log("broadcast.start", f"{len(ids)} получателей, {MODES.get(mode, mode)}")
     ctx.notice = "🚀 Рассылка запущена. Пришлю отчёт, когда закончится."
     return "a:bc"
 
 
-async def run_broadcast(app: App, admin_id: int, from_chat: int, message_id: int) -> None:
-    ids = [r["id"] for r in await app.db.fetchall("SELECT id FROM users WHERE is_blocked = 0 AND is_banned = 0")]
+async def run_broadcast(app: App, admin_id: int, from_chat: int, message_id: int, ids: list[int],
+                        forward: bool = False) -> None:
     ok = blocked = failed = 0
+    send = app.bot.forward_message if forward else app.bot.copy_message
     for uid in ids:
         while True:
             try:
-                await app.bot.copy_message(uid, from_chat, message_id)
+                await send(uid, from_chat, message_id)
                 ok += 1
             except TelegramRetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)
@@ -257,11 +288,13 @@ async def run_broadcast(app: App, admin_id: int, from_chat: int, message_id: int
                 failed += 1
             break
         await asyncio.sleep(0.05)  # ~20 сообщений в секунду — в пределах лимитов Telegram
+    report = (f"📣 Рассылка завершена\n✅ Доставлено: {ok}\n"
+              f"🚫 Заблокировали бота: {blocked}\n⚠️ Ошибки: {failed}")
     try:
-        await app.bot.send_message(admin_id, f"📣 Рассылка завершена\n✅ Доставлено: {ok}\n"
-                                             f"🚫 Заблокировали бота: {blocked}\n⚠️ Ошибки: {failed}")
+        await app.bot.send_message(admin_id, report)
     except TelegramAPIError:
         log.warning("Не удалось отправить отчёт о рассылке")
+    await app.log_event(report)
 
 
 # ---------- жалобы ----------

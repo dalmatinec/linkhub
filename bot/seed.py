@@ -25,6 +25,20 @@ async def apply_seed(db: Database) -> None:
         ((k, b["label"], b.get("icon"), b.get("style")) for k, b in seed["buttons"].items()),
     )
 
+    # Наборы, появившиеся в обновлениях, заливаются один раз (флаг в settings), даже в старую базу
+    for flag, table, rows, sql in (
+        ("seed_categories", "categories", [(n, i) for i, n in enumerate(seed["categories"])],
+         "INSERT INTO categories(label, position) VALUES (?, ?)"),
+        ("seed_app_fields", "app_fields",
+         [(f["label"], f["html"], f["kind"], f["role"], f["required"], i) for i, f in enumerate(seed["app_fields"])],
+         "INSERT INTO app_fields(label, html, kind, role, required, position) VALUES (?, ?, ?, ?, ?, ?)"),
+    ):
+        if await db.fetchval("SELECT 1 FROM settings WHERE key = ?", (flag,)):
+            continue
+        if not await db.fetchval(f"SELECT COUNT(*) FROM {table}"):
+            await db.executemany(sql, rows)
+        await db.execute("INSERT INTO settings(key, value) VALUES (?, '1')", (flag,))
+
     if await db.fetchval("SELECT COUNT(*) FROM menu_items"):
         return
 

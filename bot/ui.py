@@ -8,6 +8,7 @@ from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 
 from .app import App, Screen
+from .catalog import Tr
 
 log = logging.getLogger(__name__)
 
@@ -16,7 +17,10 @@ BLANK = "⠀"  # Telegram не принимает пустой текст
 
 
 # Подстановки в текстах: в админке пишутся по-русски, английские оставлены для совместимости
-PLACEHOLDERS = {"first_name": "имя", "city": "город", "query": "запрос", "shop": "магазин"}
+PLACEHOLDERS = {
+    "first_name": "имя", "city": "город", "query": "запрос", "shop": "магазин", "category": "категория",
+    "step": "шаг", "total": "всего", "reason": "причина", "text": "текст",
+}
 
 
 def fill(html: str, **values: object) -> str:
@@ -36,8 +40,9 @@ def button(label: str, icon: str | None = None, style: str | None = None, *, cb:
     )
 
 
-def sys_button(app: App, key: str, cb: str) -> InlineKeyboardButton:
-    b = app.catalog.button(key)
+def sys_button(tr: Tr, key: str, cb: str) -> InlineKeyboardButton:
+    """Системная кнопка («Назад», стрелки…) на языке пользователя."""
+    b = tr.button(key)
     return button(b.label, b.icon, b.style, cb=cb)
 
 
@@ -53,15 +58,15 @@ def paginate(items: Sequence[T], page: int, size: int) -> tuple[Sequence[T], int
     return items[page * size:(page + 1) * size], page, pages
 
 
-def nav_row(app: App, page: int, pages: int, make_cb: Callable[[int], str]) -> list[InlineKeyboardButton]:
+def nav_row(tr: Tr, page: int, pages: int, make_cb: Callable[[int], str]) -> list[InlineKeyboardButton]:
     if pages <= 1:
         return []
     row = []
     if page > 0:
-        row.append(sys_button(app, "prev", make_cb(page - 1)))
+        row.append(sys_button(tr, "prev", make_cb(page - 1)))
     row.append(button(f"{page + 1}/{pages}", cb="noop"))
     if page < pages - 1:
-        row.append(sys_button(app, "next", make_cb(page + 1)))
+        row.append(sys_button(tr, "next", make_cb(page + 1)))
     return row
 
 

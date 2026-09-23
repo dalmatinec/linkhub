@@ -25,6 +25,25 @@ TEXT_NAMES = {
     "banned": "🚫 Сообщение забаненному",
     "flood": "🐢 «Слишком быстро» (антифлуд)",
     "shop_unavailable": "🙈 Магазин недоступен",
+    "city_categories": "🗂 Категории внутри города",
+    "city_category_shops": "🗂 Магазины города в категории",
+    "categories": "🗂 Экран «Категории»",
+    "category_shops": "🗂 Магазины категории",
+    "favorites": "⭐ Заголовок «Избранное»",
+    "favorites_empty": "⭐ Пустое избранное",
+    "fav_added": "⭐ «Добавлено в избранное»",
+    "fav_removed": "⭐ «Убрано из избранного»",
+    "language": "🌐 Экран выбора языка",
+    "apply_intro": "📝 Заявка: вступление",
+    "apply_step": "📝 Заявка: «Шаг N из M»",
+    "apply_wrong": "📝 Заявка: неверный ответ",
+    "apply_confirm": "📝 Заявка: проверка перед отправкой",
+    "apply_done": "📝 Заявка: отправлена",
+    "apply_pending": "📝 Заявка: уже на рассмотрении",
+    "apply_cooldown": "📝 Заявка: слишком часто",
+    "apply_accepted": "📝 Заявка одобрена (сообщение автору)",
+    "apply_rejected": "📝 Заявка отклонена (сообщение автору)",
+    "moderator_message": "💬 Сообщение модератора автору заявки",
 }
 # Где показывается текст и что в него можно подставить
 TEXT_HELP = {
@@ -42,6 +61,26 @@ TEXT_HELP = {
     "banned": ("Всплывает у забаненного пользователя.", {}),
     "flood": ("Всплывает, когда пользователь жмёт кнопки слишком быстро.", {}),
     "shop_unavailable": ("Всплывает, если магазин скрыли, а у человека осталась старая кнопка.", {}),
+    "city_categories": ("Над кнопками категорий после выбора города.", {"город": "название города"}),
+    "city_category_shops": ("Над магазинами выбранной категории в городе.",
+                            {"город": "название города", "категория": "название категории"}),
+    "categories": ("Экран кнопки меню «Категории» (если текст у самой кнопки пустой).", {}),
+    "category_shops": ("Над магазинами категории по всем городам.", {"категория": "название категории"}),
+    "favorites": ("Над списком избранного (если текст у кнопки меню пустой).", {}),
+    "favorites_empty": ("Когда в избранном ничего нет.", {}),
+    "fav_added": ("Всплывает после нажатия «В избранное».", {}),
+    "fav_removed": ("Всплывает после «Из избранного».", {}),
+    "language": ("Экран выбора языка (если текст у кнопки меню пустой).", {}),
+    "apply_intro": ("Первый экран заявки «Разместить магазин».", {}),
+    "apply_step": ("Над каждым вопросом анкеты.", {"шаг": "номер вопроса", "всего": "сколько всего вопросов"}),
+    "apply_wrong": ("Если прислали не то (например, текст вместо фото).", {}),
+    "apply_confirm": ("Заголовок сводки ответов перед отправкой.", {}),
+    "apply_done": ("После отправки заявки.", {}),
+    "apply_pending": ("Если у человека уже есть заявка на рассмотрении.", {}),
+    "apply_cooldown": ("Если новую заявку отправляют слишком скоро.", {}),
+    "apply_accepted": ("Приходит автору, когда заявку одобрили.", {}),
+    "apply_rejected": ("Приходит автору, когда заявку отклонили.", {"причина": "причина, которую вы укажете"}),
+    "moderator_message": ("Так выглядит ваш ответ автору заявки.", {"текст": "ваше сообщение"}),
 }
 BUTTON_NAMES = {
     "back": "◀️ Назад",
@@ -49,8 +88,16 @@ BUTTON_NAMES = {
     "next": "▶️ Следующая страница",
     "other_cities": "🌍 Другие города",
     "report": "🚩 Пожаловаться",
+    "all_shops": "📋 Все магазины города",
+    "fav_add": "⭐ В избранное",
+    "fav_remove": "✖️ Из избранного",
+    "apply_start": "📝 Заполнить заявку",
+    "apply_skip": "⏭ Пропустить вопрос",
+    "apply_send": "✅ Отправить заявку",
+    "apply_restart": "✏️ Заполнить заново",
+    "apply_cancel": "✖️ Отмена заявки",
 }
-MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "search_prompt"}
+MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "city_categories", "search_prompt"}
 
 
 @view("texts", "texts")
@@ -85,7 +132,8 @@ async def view_text(ctx: Ctx, key: str) -> ViewResult:
             f"<b>Сейчас так:</b>\n\n{row['html'] or '<i>пусто</i>'}")
     rows = editor_rows("text", key, row, label=False, rich=True)
     if key not in MEDIA_TEXTS:  # медиа уместно только у экранов
-        rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")]]
+        rows = [[b("📝 Изменить текст", f"x:htm:text:{key}")],
+                [b("🌐 Перевод на другие языки", f"a:trl:text:{key}")]]
     rows.append(back_btn("a:texts"))
     return html, rows
 
@@ -283,3 +331,103 @@ async def act_tag_delete(ctx: Ctx, tag_id: str):
     await ctx.reload()
     await ctx.log("tag.delete", tag_id)
     return "a:tags"
+
+
+# ---------- категории ----------
+@view("catgs", "cities")
+async def view_categories(ctx: Ctx) -> ViewResult:
+    cat = ctx.app.catalog
+    rows = grid([b(("🙈 " if not c.is_active else "") + f"{c.label} · {len(cat.by_category.get(c.id, []))}",
+                   f"a:catg:{c.id}") for c in cat.categories.values()], 2)
+    rows.append([b("➕ Добавить категории", "x:catnew", "success")])
+    rows.append([b(f"🏙 Категории внутри города: {'вкл' if cat.setting('city_categories', 1) else 'выкл'}",
+                   "x:cattog")])
+    rows.append(back_btn("a:home"))
+    html = ("🗂 <b>Категории</b> (VPN, подарки, звёзды…)\n\n"
+            "Магазину можно поставить несколько категорий (в карточке магазина → «🗂 Категории»).\n"
+            "Когда «Категории внутри города» включены, после выбора города человек сначала видит категории, "
+            "в которых в этом городе есть магазины, и кнопку «Все магазины».\n"
+            "Можно также добавить в меню кнопку типа «🗂 Категории» — категории по всем городам.")
+    return html, rows
+
+
+@action("cattog", "cities")
+async def act_city_categories_toggle(ctx: Ctx):
+    value = 0 if ctx.app.catalog.setting("city_categories", 1) else 1
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('city_categories', ?)", (str(value),))
+    await ctx.reload()
+    return "a:catgs"
+
+
+@action("catnew", "cities")
+async def act_category_new(ctx: Ctx):
+    return await ctx.ask("catnew", "Отправьте название категории. Можно несколько — каждую с новой строки.\n"
+                                   "Премиум-эмодзи в начале станет иконкой кнопки.", "a:catgs")
+
+
+@on_input("catnew", "cities")
+async def in_category_new(ctx: Ctx, message: Message):
+    names = [" ".join(n.split())[:64] for n in (message.text or "").split("\n") if n.strip()]
+    if not names:
+        raise InputError("Нужен текст.")
+    db = ctx.app.db
+    pos = (await db.fetchval("SELECT COALESCE(MAX(position), -1) + 1 FROM categories")) or 0
+    if len(names) == 1:  # одна категория — можно с премиум-иконкой
+        label, icon = parse_label(message)
+        cat_id = await db.execute("INSERT INTO categories(label, icon, position) VALUES (?, ?, ?)", (label, icon, pos))
+        await ctx.reload()
+        await ctx.log("cat.create", label)
+        return f"a:catg:{cat_id}"
+    await db.executemany("INSERT INTO categories(label, position) VALUES (?, ?)",
+                         ((n, pos + i) for i, n in enumerate(names)))
+    await ctx.reload()
+    await ctx.log("cat.create", ", ".join(names))
+    ctx.notice = f"✅ Добавлено категорий: {len(names)}"
+    return "a:catgs"
+
+
+@view("catg", "cities")
+async def view_category(ctx: Ctx, cat_id: str) -> ViewResult:
+    app = ctx.app
+    row = await app.db.fetchone("SELECT * FROM categories WHERE id = ?", (int(cat_id),))
+    if row is None:
+        return await view_categories(ctx)
+    html = (f"🗂 <b>{escape(row['label'])}</b>\n"
+            f"Статус: {'видна' if row['is_active'] else '🙈 скрыта'}\n"
+            f"Иконка: {icon_line(row['icon'])}\n"
+            f"Магазинов: {len(app.catalog.by_category.get(row['id'], []))}")
+    rows = editor_rows("cat", cat_id, row, label=True, rich=False)
+    rows.append([b("⬆️ Выше", f"x:catmv:{cat_id}:-1"), b("⬇️ Ниже", f"x:catmv:{cat_id}:1")])
+    rows.append([b("🙈 Скрыть" if row["is_active"] else "👁 Показать", f"x:catact:{cat_id}"),
+                 b("🗑 Удалить", f"a:catdel:{cat_id}", "danger")])
+    rows.append(back_btn("a:catgs"))
+    return html, rows
+
+
+@action("catmv", "cities")
+async def act_category_move(ctx: Ctx, cat_id: str, delta: str):
+    await move(ctx, "categories", int(cat_id), int(delta))
+    return f"a:catg:{cat_id}"
+
+
+@action("catact", "cities")
+async def act_category_active(ctx: Ctx, cat_id: str):
+    await ctx.app.db.execute("UPDATE categories SET is_active = 1 - is_active WHERE id = ?", (int(cat_id),))
+    await ctx.reload()
+    return f"a:catg:{cat_id}"
+
+
+@view("catdel", "cities")
+async def view_category_delete(ctx: Ctx, cat_id: str) -> ViewResult:
+    c = ctx.app.catalog.categories.get(int(cat_id))
+    return (f"🗑 Удалить категорию <b>{escape(c.label if c else cat_id)}</b>? Магазины останутся.",
+            [[b("🗑 Да, удалить", f"x:catdel:{cat_id}", "danger"), b("✖️ Отмена", f"a:catg:{cat_id}")]])
+
+
+@action("catdel", "cities")
+async def act_category_delete(ctx: Ctx, cat_id: str):
+    c = ctx.app.catalog.categories.get(int(cat_id))
+    await ctx.app.db.execute("DELETE FROM categories WHERE id = ?", (int(cat_id),))
+    await ctx.reload()
+    await ctx.log("cat.delete", c.label if c else cat_id)
+    return "a:catgs"

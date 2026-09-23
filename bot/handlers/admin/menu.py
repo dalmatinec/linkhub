@@ -19,8 +19,12 @@ KINDS = {
     "tag": "🏷 Магазины с меткой",
     "all": "🗂 Все магазины",
     "cities": "🏙 Выбор города",
+    "categories": "🗂 Категории (все города)",
     "search": "🔍 Поиск",
-    "url": "🔗 Ссылка",
+    "favorites": "⭐ Избранное",
+    "apply": "📝 Заявка «Разместить магазин»",
+    "language": "🌐 Выбор языка",
+    "url": "🔗 Ссылка (канал, другой бот, сайт)",
 }
 
 
@@ -55,7 +59,7 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
     if item.kind != "url":
         lines.append(f"Медиа: {media_line(app, item.media_id)}")
         lines.append(f"\n<b>Текст экрана:</b>\n{snippet(item.html)}")
-        if item.kind in ("cities", "search") and not item.html:
+        if item.kind in ("cities", "search", "categories", "favorites", "apply", "language") and not item.html:
             lines.append("<i>(пусто — используется общий текст из раздела «Тексты»)</i>")
     if item.kind == "menu":
         lines.append("\n<b>Кнопки этого экрана</b> — нажмите, чтобы настроить:")
@@ -249,7 +253,7 @@ async def act_item_preview(ctx: Ctx, item_id: str):
     item = app.catalog.menu.get(int(item_id))
     if item is None:
         return "a:home"
-    html, media_id, kb = screen_menu(app, item, "Имя")
+    html, media_id, kb = screen_menu(app, app.catalog.tr(app.catalog.base_lang), item, "Имя")
     # в предпросмотре кнопки неактивны — чтобы не уводить в каталог
     for r in kb.inline_keyboard:
         for i, btn in enumerate(r):

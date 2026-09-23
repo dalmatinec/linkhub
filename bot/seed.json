@@ -9,15 +9,29 @@
     "flood_ban_minutes": 30,
     "clean_chat": 1,
     "report_cooldown_minutes": 60,
+    "apply_cooldown_hours": 24,
     "tz_offset": 5,
     "backup_hour": 4,
-    "backup_chat_id": 0,
-    "expiry_notify_hours": 24
+    "log_chat_id": 0,
+    "log_admin_actions": 1,
+    "expiry_notify_hours": 24,
+    "city_categories": 1,
+    "base_lang": "ru",
+    "languages": {"ru": "🇷🇺 Русский", "kk": "🇰🇿 Қазақша", "en": "🇬🇧 English"},
+    "enabled_langs": ["ru", "kk", "en"]
   },
   "texts": {
     "cities": "🏙 <b>Выберите город</b>",
     "other_cities": "🌍 <b>Другие города</b>",
+    "city_categories": "🏙 <b>{город}</b>\nВыберите категорию:",
     "city_shops": "🏙 <b>{город}</b>\nВыберите магазин:",
+    "city_category_shops": "🏙 <b>{город}</b> · {категория}\nВыберите магазин:",
+    "categories": "🗂 <b>Категории</b>\nЧто ищете?",
+    "category_shops": "🗂 <b>{категория}</b>\nВыберите магазин:",
+    "favorites": "⭐ <b>Избранное</b>",
+    "favorites_empty": "Здесь появятся магазины, которые вы добавите в избранное кнопкой ⭐ в карточке.",
+    "fav_added": "Добавлено в избранное",
+    "fav_removed": "Убрано из избранного",
     "empty": "Здесь пока пусто.",
     "search_prompt": "🔍 Напишите, что ищете: название магазина или товар (например, <i>VPN</i>).",
     "search_results": "🔍 Результаты по запросу «{запрос}»:",
@@ -28,18 +42,46 @@
     "verified_badge": "✅ <b>Проверенный магазин</b>",
     "banned": "Доступ к боту ограничен.",
     "flood": "Слишком быстро, подождите пару секунд.",
-    "shop_unavailable": "Магазин сейчас недоступен."
+    "shop_unavailable": "Магазин сейчас недоступен.",
+    "language": "🌐 Выберите язык / Тілді таңдаңыз / Choose language",
+    "apply_intro": "📝 <b>Разместить магазин в каталоге</b>\n\nОтветьте на несколько вопросов — заявка уйдёт модераторам. После проверки (и оплаты размещения) магазин появится в каталоге.",
+    "apply_step": "Шаг {шаг} из {всего}",
+    "apply_wrong": "⚠️ Здесь нужен другой ответ — посмотрите вопрос ниже.",
+    "apply_confirm": "📝 <b>Проверьте заявку</b>",
+    "apply_done": "✅ Заявка отправлена! Модератор свяжется с вами.",
+    "apply_pending": "⏳ Ваша заявка уже на рассмотрении. Мы ответим, как только проверим её.",
+    "apply_cooldown": "Новую заявку можно будет отправить позже.",
+    "apply_accepted": "✅ Ваша заявка одобрена! Модератор готовит карточку магазина.",
+    "apply_rejected": "❌ Заявка отклонена.\n{причина}",
+    "moderator_message": "💬 <b>Сообщение от модератора:</b>\n\n{текст}"
   },
   "buttons": {
     "back": {"label": "◀️ Назад"},
     "prev": {"label": "◀️"},
     "next": {"label": "▶️"},
     "other_cities": {"label": "🌍 Другие города"},
-    "report": {"label": "🚩 Пожаловаться", "style": "danger"}
+    "all_shops": {"label": "📋 Все магазины"},
+    "report": {"label": "🚩 Пожаловаться", "style": "danger"},
+    "fav_add": {"label": "⭐ В избранное"},
+    "fav_remove": {"label": "✖️ Из избранного"},
+    "apply_start": {"label": "✅ Заполнить заявку", "style": "success"},
+    "apply_skip": {"label": "⏭ Пропустить"},
+    "apply_send": {"label": "✅ Отправить", "style": "success"},
+    "apply_restart": {"label": "✏️ Заполнить заново"},
+    "apply_cancel": {"label": "✖️ Отмена"}
   },
   "tags": [
     {"id": 1, "label": "Премиум", "position": 0},
     {"id": 2, "label": "Топ", "position": 1}
+  ],
+  "categories": ["🔐 VPN", "🎁 Подарки", "⭐️ Звёзды", "🎟 Сертификаты", "🎮 Скины"],
+  "app_fields": [
+    {"label": "Название", "html": "Как называется ваш магазин? Это будет текст кнопки в каталоге.", "kind": "text", "role": "name", "required": 1},
+    {"label": "Описание", "html": "Что продаёте? Коротко опишите ассортимент и условия.", "kind": "text", "role": "description", "required": 1},
+    {"label": "Прайс", "html": "Прайс-лист — текстом или фото.", "kind": "any", "role": "price", "required": 0},
+    {"label": "Контакты", "html": "Контакты для покупателей: @username или ссылки, каждый с новой строки.", "kind": "text", "role": "contacts", "required": 1},
+    {"label": "Города", "html": "В каких городах работаете? Через запятую или «все».", "kind": "text", "role": "cities", "required": 0},
+    {"label": "Логотип", "html": "Логотип или фото для карточки магазина.", "kind": "media", "role": "media", "required": 0}
   ],
   "menu": {
     "html": "👋 <b>Добро пожаловать, {имя}!</b>\n\nЭто каталог проверенных магазинов. Выберите раздел:",
@@ -47,7 +89,10 @@
       {"kind": "tag", "payload": "1", "label": "💎 Премиум", "style": "primary", "row": 0, "html": "💎 <b>Премиум магазины</b>"},
       {"kind": "tag", "payload": "2", "label": "🔥 Топы", "style": "success", "row": 0, "html": "🔥 <b>Топ магазины</b>"},
       {"kind": "cities", "label": "🏙 Выбрать город", "row": 1},
-      {"kind": "search", "label": "🔍 Поиск", "row": 2}
+      {"kind": "search", "label": "🔍 Поиск", "row": 2},
+      {"kind": "favorites", "label": "⭐ Избранное", "row": 2},
+      {"kind": "apply", "label": "📝 Разместить магазин", "row": 3},
+      {"kind": "language", "label": "🌐 Язык", "row": 3}
     ]
   },
   "cities": {

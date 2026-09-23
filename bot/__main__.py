@@ -18,6 +18,7 @@ from .jobs import run_jobs
 from .media import MediaStore
 from .middlewares import GuardMiddleware
 from .seed import apply_seed
+from .telelog import TelegramLogHandler
 
 log = logging.getLogger("bot")
 
@@ -83,10 +84,18 @@ async def main() -> None:
             log.info("Прогрев медиа: загружено %s, ошибок %s", ok, failed)
         tasks.append(asyncio.create_task(warmup()))
 
+    tg_log = TelegramLogHandler(app)
+    logging.getLogger().addHandler(tg_log)
+    tasks.append(asyncio.create_task(tg_log.run()))
+
     log.info("Бот @%s запущен", app.bot_username)
+    await app.log_event(f"🟢 Бот @{app.bot_username} запущен. Магазинов: {len(app.catalog.all_shops)}, "
+                        f"пользователей: {len(app.known_users)}.")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        await app.log_event(f"🔴 Бот @{app.bot_username} остановлен.")
+        logging.getLogger().removeHandler(tg_log)
         for t in tasks:
             t.cancel()
         await app.flush()

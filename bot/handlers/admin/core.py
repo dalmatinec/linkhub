@@ -28,9 +28,10 @@ router = Router(name="admin")
 
 PERMS: dict[str, str] = {
     "shops": "🏪 Магазины",
+    "applications": "📝 Заявки и анкета",
     "menu": "📋 Меню и кнопки",
-    "texts": "📝 Тексты",
-    "cities": "🏙 Города и метки",
+    "texts": "📝 Тексты и переводы",
+    "cities": "🏙 Города, метки, категории",
     "users": "👥 Пользователи и баны",
     "broadcast": "📣 Рассылка",
     "stats": "📊 Статистика",
@@ -69,7 +70,10 @@ class Ctx:
             await call.answer(text[:190], show_alert=alert)
 
     async def log(self, action: str, details: str = "") -> None:
-        await self.app.log_action(self.user_id, action, details)
+        from .journal import describe
+        name = await self.app.db.fetchval("SELECT first_name FROM users WHERE id = ?", (self.user_id,))
+        pretty = f"{escape(name or str(self.user_id))}: {describe(self.app, action, details)}"
+        await self.app.log_action(self.user_id, action, details, pretty)
 
     async def reload(self) -> None:
         await self.app.catalog.reload()
@@ -122,8 +126,8 @@ async def render(ctx: Ctx, result: ViewResult, message_id: int | None) -> None:
     html, rows = result
     if ctx.notice:
         html = f"{ctx.notice}\n\n{html}"
-    if len(html) > TEXT_LIMIT:
-        html = html[:TEXT_LIMIT - 1] + "…"
+    if len(html) > TEXT_LIMIT:  # резать HTML посередине тега нельзя — показываем простым текстом
+        html = escape(html_to_plain(html))[:TEXT_LIMIT - 1] + "…"
     kb = markup(rows)
     bot = ctx.app.bot
     if message_id:
@@ -290,6 +294,13 @@ TARGETS: dict[str, tuple[str, str, str, str, bool]] = {
     "city": ("cities", "id", "a:city:{}", "cities", False),
     "shop": ("shops", "id", "a:shop:{}", "shops", True),
     "tag": ("tags", "id", "a:tag:{}", "cities", False),
+    "cat": ("categories", "id", "a:catg:{}", "cities", False),
+    "field": ("app_fields", "id", "a:fld:{}", "applications", False),
+}
+# что из объекта можно перевести на другие языки
+TR_FIELDS: dict[str, tuple[str, ...]] = {
+    "item": ("label", "html"), "text": ("html",), "btn": ("label",), "city": ("label",),
+    "shop": ("label", "html"), "tag": ("label",), "cat": ("label",), "field": ("label", "html"),
 }
 
 
@@ -344,7 +355,7 @@ async def in_label(ctx: Ctx, message: Message, kind: str, key: str):
     fields: dict[str, Any] = {}
     if label:
         fields["label"] = label
-    if icon and kind != "tag":
+    if icon and kind not in ("tag", "field"):
         fields["icon"] = icon
     if not fields:
         raise InputError("Пустой текст.")
@@ -390,7 +401,9 @@ async def in_html(ctx: Ctx, message: Message, kind: str, key: str):
     html, plain = message_html(message)
     row = await fetch_target(ctx, kind, key)
     fields: dict[str, Any] = {}
-    media_id = row["media_id"]
+    media_id = row["media_id"] if "media_id" in row.keys() else None
+    if _has_media(message) and "media_id" not in row.keys():
+        raise InputError("Здесь нужен только текст.")
     if _has_media(message):
         media_id = fields["media_id"] = await _save_media(ctx, message)
     if not plain and "media_id" not in fields:
@@ -462,6 +475,8 @@ def editor_rows(kind: str, key: str, row: Any, *, label: bool = True, rich: bool
         rows.append(r)
         if row["media_id"]:
             rows.append([b("✖️ Убрать медиа", f"x:nomed:{kind}:{key}")])
+    if kind in TR_FIELDS:
+        rows.append([b("🌐 Перевод на другие языки", f"a:trl:{kind}:{key}")])
     return rows
 
 
@@ -490,12 +505,16 @@ async def act_close(ctx: Ctx):
 async def view_home(ctx: Ctx) -> ViewResult:
     app = ctx.app
     perms = app.perms(ctx.user_id) or set()
+    new_apps = await app.db.fetchval("SELECT COUNT(*) FROM applications WHERE status = 'new'")
     sections = [
         ("shops", "🏪 Магазины", "a:shops:0"),
+        ("applications", f"📝 Заявки{f' ({new_apps})' if new_apps else ''}", "a:appls:new:0"),
         ("menu", "📋 Меню", f"a:item:{app.catalog.root_id}"),
         ("texts", "📝 Тексты и кнопки", "a:texts"),
         ("cities", "🏙 Города", "a:cities:0"),
         ("cities", "🏷 Метки", "a:tags"),
+        ("cities", "🗂 Категории", "a:catgs"),
+        ("texts", "🌐 Языки", "a:langs"),
         ("users", "👥 Пользователи", "a:users"),
         ("broadcast", "📣 Рассылка", "a:bc"),
         ("stats", "📊 Статистика", "a:stats"),

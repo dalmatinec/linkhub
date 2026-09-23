@@ -110,6 +110,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     tz = int(cat.setting("tz_offset", 5))
     tags = ", ".join(f"{cat.tags[t].label} ({fmt_date(exp, tz)})" for t, exp in shop.tags.items()) or "нет"
     cities = ", ".join(cat.cities[c].label for c in shop.cities if c in cat.cities) or "нет"
+    categories = ", ".join(cat.categories[c].label for c in shop.categories if c in cat.categories) or "нет"
     week = await app.db.fetchval(
         "SELECT COUNT(*) FROM events WHERE shop_id = ? AND ts > ?", (shop.id, now() - 7 * 86400))
     month = await app.db.fetchval(
@@ -122,6 +123,7 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
         f"Иконка кнопки: {icon_line(shop.icon)}\n"
         f"Метки: {escape(tags)}\n"
         f"Города: {escape(cities)}\n"
+        f"Категории: {escape(categories)}\n"
         f"Контактов: {len(shop.contacts)}\n"
         f"Медиа: {media_line(app, shop.media_id)}\n"
         f"Просмотры: 7 дн — <b>{week}</b>, 30 дн — <b>{month}</b>\n"
@@ -131,7 +133,8 @@ async def view_shop(ctx: Ctx, shop_id: str) -> ViewResult:
     sid = shop.id
     rows: Rows = editor_rows("shop", str(sid), row)
     rows.append([b("📞 Контакты", f"a:cont:{sid}"), b("👀 Предпросмотр", f"x:sprev:{sid}")])
-    rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0")])
+    rows.append([b("🏷 Метки", f"a:stags:{sid}"), b("🏙 Города", f"a:scity:{sid}:0"),
+                 b("🗂 Категории", f"a:scats:{sid}")])
     rows.append([
         b("✅ Проверенный" if not shop.verified else "✖️ Снять «Проверенный»", f"x:sver:{sid}"),
         b("👁 Опубликовать" if not shop.is_active else "🙈 Скрыть", f"x:sact:{sid}",
@@ -148,7 +151,8 @@ async def act_shop_preview(ctx: Ctx, shop_id: str):
     shop = ctx.app.catalog.shops.get(int(shop_id))
     if shop is None:
         return "a:shops:0"
-    html, media_id, kb = screen_card(ctx.app, shop, "m0")
+    cat = ctx.app.catalog
+    html, media_id, kb = screen_card(ctx.app, cat.tr(cat.base_lang), shop, "m0")
     # кнопки предпросмотра не ведут в каталог — только закрыть
     kb.inline_keyboard[-1] = [button("✖️ Закрыть предпросмотр", cb="x:close")]
     kb.inline_keyboard = [r for r in kb.inline_keyboard if not (r and r[0].callback_data or "").startswith("r:")]
@@ -380,3 +384,29 @@ async def act_shop_city_all(ctx: Ctx, shop_id: str, on: str):
     await ctx.reload()
     return f"a:scity:{shop_id}:0"
 
+
+# ---------- категории магазина ----------
+@view("scats", P)
+async def view_shop_categories(ctx: Ctx, shop_id: str) -> ViewResult:
+    cat = ctx.app.catalog
+    shop = cat.shops.get(int(shop_id))
+    if shop is None:
+        return await view_shops(ctx)
+    rows = grid([b(f"{'✅' if c.id in shop.categories else '▫️'} {c.label}", f"x:scat:{shop_id}:{c.id}")
+                 for c in cat.categories.values()], 2)
+    rows.append(back_btn(f"a:shop:{shop_id}"))
+    return (f"🗂 <b>Категории «{escape(shop.label)}»</b>\nОтметьте, что продаёт магазин. "
+            "Ассортимент поменялся — просто переставьте галочки."), rows
+
+
+@action("scat", P)
+async def act_shop_category_toggle(ctx: Ctx, shop_id: str, cat_id: str):
+    db = ctx.app.db
+    args = (int(shop_id), int(cat_id))
+    if await db.fetchval("SELECT 1 FROM shop_categories WHERE shop_id = ? AND category_id = ?", args):
+        await db.execute("DELETE FROM shop_categories WHERE shop_id = ? AND category_id = ?", args)
+    else:
+        await db.execute("INSERT INTO shop_categories(shop_id, category_id) VALUES (?, ?)", args)
+    await ctx.reload()
+    await ctx.log("shop.categories", shop_id)
+    return f"a:scats:{shop_id}"
