@@ -46,9 +46,19 @@ async def view_shops(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("▶️", f"a:shops:{p + 1}"))
     rows.append(nav)
     rows.append([b("➕ Добавить", "x:shopnew", "success"), b("🔍 Найти", "x:shopfind")])
+    show_cities = ctx.app.catalog.setting("card_show_cities", 1)
+    rows.append([b(f"🏙 Города в карточке: {'показывать' if show_cities else 'не показывать'}", "x:cardcity")])
     rows.append(back_btn("a:home"))
     html = f"🏪 <b>Магазины</b> — {len(shops)}\n🙈 — скрытые (не видны пользователям)"
     return html, rows
+
+
+@action("cardcity", P)
+async def act_card_cities_toggle(ctx: Ctx):
+    value = 0 if ctx.app.catalog.setting("card_show_cities", 1) else 1
+    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('card_show_cities', ?)", (str(value),))
+    await ctx.reload()
+    return "a:shops:0"
 
 
 @action("shopnew", P)

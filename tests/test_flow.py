@@ -188,6 +188,10 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         await h.press(USER, "Gift Shop")
         card = h.screen(USER)
         assert "<b>Подарки</b>" in card.text
+        assert "🏙 <b>Города:</b> Алматы" in card.text, "города в карточке строятся сами"
+        write = h.find(USER, "Написать").url
+        assert write.startswith("https://t.me/gift_manager?text=") and "%D0%9A%D1%80%D1%83%D0%B8%D0%B7" in write, \
+            "в чате с оператором уже вписано приветствие"
         assert h.labels(USER) == [["💬 Написать"], ["Канал"], ["⭐ В избранное", "📤 Поделиться"],
                                   ["🚩 Пожаловаться"], ["◀️ Назад"]]
         share_url = h.find(USER, "Поделиться").url

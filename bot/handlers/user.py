@@ -15,6 +15,7 @@ Callback-данные (≤64 байт):
   ap:<go|skip|send|cancel>      заявка на размещение
 """
 import json
+import re
 from html import escape
 from urllib.parse import quote
 
@@ -28,7 +29,7 @@ from .. import search
 from ..app import App
 from ..catalog import AppField, MenuItem, Shop, Tr, now
 from ..media import MediaError
-from ..richtext import html_to_plain, message_html
+from ..richtext import CAPTION_LIMIT, html_to_plain, message_html
 from ..ui import button, current_of, fill, grid, markup, nav_row, paginate, safe_delete, show, sys_button
 
 router = Router(name="user")
@@ -227,11 +228,39 @@ def screen_category(app: App, tr: Tr, cat_id: int, item_id: int, page: int):
     return html, None, markup(kb)
 
 
+_PERSON_LINK = re.compile(r"^https://t\.me/([A-Za-z0-9_]{4,32})/?$")
+
+
+def contact_url(url: str, greeting: str) -> str:
+    """Ссылка на @username открывает чат с уже вписанным приветствием (человек сам жмёт «Отправить»)."""
+    if greeting and _PERSON_LINK.match(url):
+        return f"{url.rstrip('/')}?text={quote(greeting)}"
+    return url
+
+
+def cities_line(app: App, tr: Tr, shop: Shop) -> str:
+    """«🏙 Города: Алматы, Астана» — строится сам из отмеченных у магазина городов."""
+    cat = app.catalog
+    active = [c for c in cat.cities.values() if c.is_active]
+    mine = [c for c in active if c.id in shop.cities]
+    if not mine or not cat.setting("card_show_cities", 1):
+        return ""
+    if len(mine) == len(active) and len(active) > 1:
+        return tr.text("card_cities_all")
+    mine.sort(key=lambda c: (not c.is_main, c.position, c.label))
+    return fill(tr.text("card_cities"), cities=", ".join(tr.label("city", c) for c in mine))
+
+
 def screen_card(app: App, tr: Tr, shop: Shop, ctx: str, is_fav: bool = False):
     html = tr.html("shop", shop) or tr.label("shop", shop)
     if shop.verified:
         html = tr.text("verified_badge") + "\n\n" + html
-    kb = [[button(c.label, c.icon, c.style, url=c.url)] for c in shop.contacts]
+    line = cities_line(app, tr, shop)
+    # с картинкой Telegram пропускает не больше 1024 символов подписи — строку городов тогда не добавляем
+    if line and (not shop.media_id or len(html_to_plain(html + line)) < CAPTION_LIMIT - 2):
+        html += "\n\n" + line
+    greeting = html_to_plain(tr.text("contact_greeting")).strip()
+    kb = [[button(c.label, c.icon, c.style, url=contact_url(c.url, greeting))] for c in shop.contacts]
     row = [sys_button(tr, "fav_remove" if is_fav else "fav_add", f"f:{shop.id}:{ctx}")]
     if app.bot_username:  # делятся ссылкой на магазин в боте, а не пересылкой сообщения
         link = f"https://t.me/{app.bot_username}?start=shop_{shop.id}"

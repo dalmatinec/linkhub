@@ -28,7 +28,8 @@
       "kk",
       "en"
     ],
-    "city_categories_min": 6
+    "city_categories_min": 6,
+    "card_show_cities": 1
   },
   "texts": {
     "cities": "🏙 <b>Выберите город</b>",
@@ -63,7 +64,10 @@
     "apply_cooldown": "Новую заявку можно будет отправить чуть позже.",
     "apply_accepted": "✅ Заявка одобрена. Модератор готовит карточку магазина.",
     "apply_rejected": "❌ Заявка отклонена.\n{причина}",
-    "moderator_message": "💬 <b>Сообщение от модератора</b>\n\n{текст}"
+    "moderator_message": "💬 <b>Сообщение от модератора</b>\n\n{текст}",
+    "card_cities": "🏙 <b>Города:</b> {города}",
+    "card_cities_all": "🏙 <b>Работает во всех городах</b>",
+    "contact_greeting": "Здравствуйте! Пишу вам из Круиза 🛳 Подскажите, что сейчас в наличии?"
   },
   "buttons": {
     "back": {
