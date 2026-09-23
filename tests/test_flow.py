@@ -728,3 +728,21 @@ def test_operator_button_easy_change(tmp_path):
         assert h.labels(USER)[:2] == [["💬 Написать"], ["💬 Написать оператору"]]
         assert h.find(USER, "💬 Написать").url.startswith("https://t.me/new_seller?text=")
     run(scenario())
+
+
+def test_admin_menu_shows_city_buttons(tmp_path):
+    """В админке города в меню выглядят как обычные кнопки и настраиваются как обычные кнопки."""
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        root = h.app.catalog.root_id
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, f"a:item:{root}")
+        labels = h.labels(OWNER)
+        assert ["Алматы", "Астана"] in labels and ["Шымкент", "🌍 Другие города"] in labels
+        assert not any("[города]" in x for r in labels for x in r)
+        await h.press(OWNER, "Астана")
+        assert "Астана" in h.screen(OWNER).text and h.find(OWNER, "Текст и иконка")
+        await h.click(OWNER, f"a:item:{root}")
+        await h.press(OWNER, "Другие города")
+        assert h.find(OWNER, "Текст и иконка") and h.find(OWNER, "Цвет")
+    run(scenario())

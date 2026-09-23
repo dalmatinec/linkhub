@@ -30,11 +30,35 @@ KINDS = {
 
 
 def item_title(item: MenuItem) -> str:
-    label = "🏙 [города]" if item.kind == "city_block" else (item.label or "без названия")
+    label = "🏙 Кнопки городов" if item.kind == "city_block" else (item.label or "без названия")
     return ("" if item.is_active else "🙈 ") + label
 
 
 NO_SCREEN = ("url", "city_block")  # у этих кнопок нет своего экрана с текстом
+
+
+def layout_rows(ctx: Ctx, parent: MenuItem, make_cb, mark_id: int = 0) -> Rows:
+    """Кнопки меню так, как их видит пользователь. Блок городов показан настоящими кнопками городов.
+    make_cb(child, city_id) -> callback; city_id=0 у обычной кнопки, -1 у «Другие города»."""
+    cat = ctx.app.catalog
+    buttons: dict[int, list] = {}
+    blocks: dict[int, Rows] = {}
+    per_row = int(cat.setting("per_row", 2))
+    for child in parent.children:
+        mark = "👉 " if child.id == mark_id else ""
+        if child.kind == "city_block":
+            cities = [b(mark + ("" if c.is_active else "🙈 ") + c.label, make_cb(child, c.id)) for c in cat.main_cities]
+            if cat.other_cities:
+                cities.append(b(mark + cat.button("other_cities").label, make_cb(child, -1)))
+            blocks.setdefault(child.row, []).extend(cities[i:i + per_row] for i in range(0, len(cities), per_row))
+        else:
+            buttons.setdefault(child.row, []).append(b(mark + item_title(child), make_cb(child, 0)))
+    rows: Rows = []
+    for key in sorted(set(buttons) | set(blocks)):
+        if key in buttons:
+            rows.append(buttons[key])
+        rows.extend(blocks.get(key, []))
+    return rows
 
 
 @view("item", P)
@@ -66,7 +90,7 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
         if item.kind == "url":
             lines.append(f"Ссылка: {escape(item.payload or '⚠️ не задана')}")
         if item.kind == "city_block":
-            lines.append("Показывает главные города ⭐ по 2 в ряд и кнопку 🌍 Другие города. "
+            lines.append("Это кнопки городов: главные города ⭐ по 2 в ряд и 🌍 Другие города. "
                          "Какие города главные, настраивается в разделе 🏙 Города.")
         if item.kind not in NO_SCREEN:
             lines.append(f"Картинка: {media_line(app, item.media_id)}")
@@ -80,10 +104,11 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
             lines.append("\n<b>Кнопки внутри</b> (нажмите, чтобы настроить):")
 
     if item.kind == "menu":
-        by_row: dict[int, list] = {}
-        for child in item.children:
-            by_row.setdefault(child.row, []).append(b(item_title(child), f"a:item:{child.id}"))
-        rows.extend(by_row[r] for r in sorted(by_row))
+        def open_cb(child: MenuItem, city_id: int) -> str:
+            if child.kind == "city_block":  # город — настраивается как обычная кнопка
+                return f"a:city:{city_id}" if city_id > 0 else "a:btn:other_cities"
+            return f"a:item:{child.id}"
+        rows.extend(layout_rows(ctx, item, open_cb))
         rows.append([b("➕ Добавить кнопку", f"a:inew:{sid}", "success"),
                      b("↕️ Расстановка", f"a:arr:{sid}:0")])
 
@@ -128,16 +153,14 @@ async def view_arrange(ctx: Ctx, parent_id: str, selected: str = "0") -> ViewRes
     cat = ctx.app.catalog
     parent = cat.menu.get(int(parent_id)) or cat.menu[cat.root_id]
     sel = int(selected)
-    by_row: dict[int, list] = {}
-    for child in parent.children:
-        mark = "👉 " if child.id == sel else ""
-        by_row.setdefault(child.row, []).append(b(mark + item_title(child), f"a:arr:{parent.id}:{child.id}"))
-    rows: Rows = [by_row[r] for r in sorted(by_row)]
+    rows: Rows = layout_rows(ctx, parent, lambda child, _city: f"a:arr:{parent.id}:{child.id}", sel)
     if sel and sel in cat.menu:
         p, s = parent.id, sel
         rows.append([b("⬅️", f"x:arrmv:{p}:{s}:L"), b("⬆️", f"x:arrmv:{p}:{s}:U"),
                      b("⬇️", f"x:arrmv:{p}:{s}:D"), b("➡️", f"x:arrmv:{p}:{s}:R")])
-        rows.append([b("✏️ Настроить выбранную", f"a:item:{s}")])
+        chosen = cat.menu[s]
+        rows.append([b("✏️ Настроить выбранную",
+                       "a:cities:0" if chosen.kind == "city_block" else f"a:item:{s}")])
     rows.append([b("✅ Готово", f"a:item:{parent.id}", "success")])
     html = ("↕️ <b>Расстановка кнопок</b>\n\n"
             "Нажмите кнопку, чтобы выбрать её (👉), и двигайте стрелками.\n"

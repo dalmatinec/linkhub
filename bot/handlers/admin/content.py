@@ -162,7 +162,7 @@ async def view_button(ctx: Ctx, key: str) -> ViewResult:
             "Так она выглядит 👇")
     rows = [[button(row["label"], row["icon"], row["style"], cb="noop")]]
     rows += editor_rows("btn", key, row, label=True, rich=False)
-    rows.append(back_btn("a:texts"))
+    rows.append([b("◀️ Все тексты", "a:texts"), b("📋 Главное меню", f"a:item:{ctx.app.catalog.root_id}")])
     return html, rows
 
 
@@ -227,7 +227,7 @@ async def view_city(ctx: Ctx, city_id: str) -> ViewResult:
     rows.append([b("⬆️ Выше", f"x:cmv:{city_id}:-1"), b("⬇️ Ниже", f"x:cmv:{city_id}:1")])
     rows.append([b("🙈 Скрыть" if row["is_active"] else "👁 Показать", f"x:cact:{city_id}"),
                  b("🗑 Удалить", f"a:cdel:{city_id}", "danger")])
-    rows.append(back_btn("a:cities:0"))
+    rows.append([b("◀️ Все города", "a:cities:0"), b("📋 Главное меню", f"a:item:{app.catalog.root_id}")])
     return html, rows
 
 
