@@ -14,6 +14,16 @@ python -m bot
 
 Или в Docker: `docker compose up -d --build` (данные лежат в `./data`).
 
+### Сервер (systemd)
+
+```bash
+sudo useradd --system --home /opt/linkhub --shell /usr/sbin/nologin linkhub
+sudo cp deploy/linkhub.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now linkhub
+journalctl -u linkhub -f        # логи
+```
+Обновление: `git pull && .venv/bin/pip install -r requirements.txt && sudo systemctl restart linkhub`.
+
 Админка — команда **/admin** (видна только админам).
 
 ## Как это устроено для пользователя
