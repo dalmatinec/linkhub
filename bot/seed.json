@@ -1,0 +1,61 @@
+{
+  "settings": {
+    "per_row": 2,
+    "page_size": 10,
+    "max_media_mb": 10,
+    "flood_limit": 6,
+    "flood_window": 3,
+    "flood_strikes": 5,
+    "flood_ban_minutes": 30,
+    "clean_chat": 1,
+    "report_cooldown_minutes": 60,
+    "tz_offset": 5,
+    "backup_hour": 4,
+    "backup_chat_id": 0,
+    "expiry_notify_hours": 24
+  },
+  "texts": {
+    "cities": "🏙 <b>Выберите город</b>",
+    "other_cities": "🌍 <b>Другие города</b>",
+    "city_shops": "🏙 <b>{city}</b>\nВыберите магазин:",
+    "empty": "Здесь пока пусто.",
+    "search_prompt": "🔍 Напишите, что ищете: название магазина или товар (например, <i>VPN</i>).",
+    "search_results": "🔍 Результаты по запросу «{query}»:",
+    "search_empty": "Ничего не нашлось по запросу «{query}».",
+    "report_prompt": "🚩 Опишите проблему с магазином <b>{shop}</b> одним сообщением.",
+    "report_thanks": "Спасибо! Жалоба отправлена модераторам.",
+    "report_limit": "Вы уже отправляли жалобу недавно. Попробуйте позже.",
+    "verified_badge": "✅ <b>Проверенный магазин</b>",
+    "banned": "Доступ к боту ограничен.",
+    "flood": "Слишком быстро, подождите пару секунд.",
+    "shop_unavailable": "Магазин сейчас недоступен."
+  },
+  "buttons": {
+    "back": {"label": "◀️ Назад"},
+    "prev": {"label": "◀️"},
+    "next": {"label": "▶️"},
+    "other_cities": {"label": "🌍 Другие города"},
+    "report": {"label": "🚩 Пожаловаться", "style": "danger"}
+  },
+  "tags": [
+    {"id": 1, "label": "Премиум", "position": 0},
+    {"id": 2, "label": "Топ", "position": 1}
+  ],
+  "menu": {
+    "html": "👋 <b>Добро пожаловать, {first_name}!</b>\n\nЭто каталог проверенных магазинов. Выберите раздел:",
+    "children": [
+      {"kind": "tag", "payload": "1", "label": "💎 Премиум", "style": "primary", "row": 0, "html": "💎 <b>Премиум магазины</b>"},
+      {"kind": "tag", "payload": "2", "label": "🔥 Топы", "style": "success", "row": 0, "html": "🔥 <b>Топ магазины</b>"},
+      {"kind": "cities", "label": "🏙 Выбрать город", "row": 1},
+      {"kind": "search", "label": "🔍 Поиск", "row": 2}
+    ]
+  },
+  "cities": {
+    "main": ["Алматы", "Астана", "Шымкент"],
+    "other": [
+      "Актау", "Актобе", "Атырау", "Караганда", "Кокшетау", "Костанай", "Кызылорда",
+      "Павлодар", "Петропавловск", "Семей", "Талдыкорган", "Тараз", "Туркестан",
+      "Уральск", "Усть-Каменогорск"
+    ]
+  }
+}
