@@ -99,7 +99,8 @@ async def show(
             log.debug("Редактирование не удалось (%s), отправляю заново", e.message)
 
     old_id = current.message_id if current is not None else await app.last_screen_id(user_id)
-    protect = bool(app.catalog.setting("protect_content", 1))  # запрет пересылки и сохранения
+    # запрет пересылки и сохранения — для покупателей; админы и модераторы могут делать скриншоты
+    protect = bool(app.catalog.setting("protect_content", 1)) and app.perms(user_id) is None
     msg: Message | None = None
     if media:
         msg = await app.media.send(bot, chat_id, media.id, html, kb, protect_content=protect)

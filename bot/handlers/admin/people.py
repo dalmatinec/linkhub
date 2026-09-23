@@ -277,7 +277,7 @@ async def run_broadcast(app: App, admin_id: int, from_chat: int, message_id: int
     for uid in ids:
         while True:
             try:
-                await send(uid, from_chat, message_id, protect_content=protect)
+                await send(uid, from_chat, message_id, protect_content=protect and app.perms(uid) is None)
                 ok += 1
             except TelegramRetryAfter as e:
                 await asyncio.sleep(e.retry_after + 1)

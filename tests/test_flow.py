@@ -198,7 +198,9 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
         assert share_url.startswith("https://t.me/share/url?url=") and f"start%3Dshop_{shop_id}" in share_url
         from aiogram.methods import SendMessage
         sent = [c for c in h.tg.calls if isinstance(c, SendMessage) and c.chat_id == USER]
-        assert sent and all(c.protect_content for c in sent), "пересылка сообщений бота запрещена"
+        assert sent and all(c.protect_content is True for c in sent), "пересылка сообщений бота запрещена"
+        owner_sent = [c for c in h.tg.calls if isinstance(c, SendMessage) and c.chat_id == OWNER]
+        assert owner_sent and not any(c.protect_content is True for c in owner_sent), "админ может делать скриншоты"
         await h.press(USER, "Назад")
         assert h.labels(USER)[0] == ["Gift Shop"]
 
