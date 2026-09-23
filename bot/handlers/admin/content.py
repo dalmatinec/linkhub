@@ -25,10 +25,6 @@ TEXT_NAMES = {
     "banned": "🚫 Сообщение забаненному",
     "flood": "🐢 Слишком быстро (антифлуд)",
     "shop_unavailable": "🙈 Магазин недоступен",
-    "city_categories": "🗂 Категории внутри города",
-    "city_category_shops": "🗂 Магазины города в категории",
-    "categories": "🗂 Экран Категории",
-    "category_shops": "🗂 Магазины категории",
     "favorites": "⭐ Заголовок Избранное",
     "favorites_empty": "⭐ Пустое избранное",
     "fav_added": "⭐ Добавлено в избранное",
@@ -64,11 +60,6 @@ TEXT_HELP = {
     "banned": ("Всплывает у забаненного пользователя.", {}),
     "flood": ("Всплывает, когда пользователь жмёт кнопки слишком быстро.", {}),
     "shop_unavailable": ("Всплывает, если магазин скрыли, а у человека осталась старая кнопка.", {}),
-    "city_categories": ("Над кнопками категорий после выбора города.", {"город": "название города"}),
-    "city_category_shops": ("Над магазинами выбранной категории в городе.",
-                            {"город": "название города", "категория": "название категории"}),
-    "categories": ("Экран кнопки меню Категории, если у самой кнопки текст пустой.", {}),
-    "category_shops": ("Над магазинами категории по всем городам.", {"категория": "название категории"}),
     "favorites": ("Над списком избранного (если текст у кнопки меню пустой).", {}),
     "favorites_empty": ("Когда в избранном ничего нет.", {}),
     "fav_added": ("Всплывает после нажатия ⭐ В избранное.", {}),
@@ -109,14 +100,13 @@ BUTTON_NAMES = {
     "apply_restart": "✏️ Заполнить заново",
     "apply_cancel": "✖️ Отмена заявки",
 }
-MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "city_categories", "search_prompt"}
+MEDIA_TEXTS = {"cities", "other_cities", "city_shops", "search_prompt"}
 
 
 # Тексты и кнопки разложены по темам: (название, описание, тексты, кнопки)
 TEXT_GROUPS = [
-    ("🏙 Города и списки", "Экраны городов, категорий и списков магазинов.",
-     ["other_cities", "city_shops", "city_categories", "city_category_shops", "categories", "category_shops",
-      "cities", "empty"], ["other_cities", "all_shops"]),
+    ("🏙 Города и списки", "Экраны городов и списков магазинов.",
+     ["other_cities", "city_shops", "cities", "empty"], ["other_cities"]),
     ("🏪 Карточка магазина", "Всё, что видно в карточке и под ней.",
      ["verified_badge", "card_cities", "card_cities_all", "contact_greeting", "shop_unavailable"],
      ["operator", "fav_add", "fav_remove", "share", "report"]),
@@ -414,118 +404,122 @@ async def act_tag_delete(ctx: Ctx, tag_id: str):
 
 
 # ---------- категории ----------
-@view("catgs", "cities")
+# Категории покупатели не видят: это слова, по которым поиск находит магазины.
+# Магазину галочки ставятся при создании и потом в 🗂 Категории на его экране.
+CP = "shops"
+
+
+def split_words(text: str) -> list[str]:
+    return list(dict.fromkeys(" ".join(w.split()) for w in text.replace("\n", ",").split(",") if w.strip()))
+
+
+@view("catgs", CP)
 async def view_categories(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
-    rows = grid([b(("🙈 " if not c.is_active else "") + f"{c.label} · {len(cat.by_category.get(c.id, []))}",
-                   f"a:catg:{c.id}") for c in cat.categories.values()], 2)
+    rows = grid([b(f"{c.label} · {len(cat.by_category.get(c.id, []))}", f"a:catg:{c.id}")
+                 for c in cat.categories.values()], 3)
     rows.append([b("➕ Добавить категории", "x:catnew", "success")])
-    rows.append([b(f"🏙 Категории внутри города: {'вкл' if cat.setting('city_categories', 1) else 'выкл'}",
-                   "x:cattog")])
-    rows.append([b(f"Показывать категории, если в городе больше {cat.setting('city_categories_min', 6)} магазинов",
-                   "x:catmin")])
     rows.append(back_btn("a:cfg"))
-    html = ("🗂 <b>Категории</b> (VPN, подарки, звёзды…)\n\n"
-            "Магазину можно поставить несколько категорий: карточка магазина, затем 🗂 Категории.\n"
-            "Когда категории внутри города включены, после выбора города человек сначала видит категории, "
-            "в которых в этом городе есть магазины, и кнопку 📋 Все магазины. Если магазинов в городе мало, "
-            "категории не показываются, сразу открывается список.\n"
-            "Ещё можно добавить в меню кнопку типа 🗂 Категории, она покажет категории по всем городам.")
+    html = ("🗂 <b>Категории товаров</b>\n\n"
+            "Покупатели их не видят, они нужны для поиска. Когда создаёте магазин, отмечаете галочками, "
+            "что в нём есть, и поиск по названию категории находит все такие магазины.\n"
+            "У категории можно указать, как ещё её пишут, например по-русски. Латиница и кириллица "
+            "понимаются сами: ST найдётся и по запросу ст.\n\n"
+            "Цифра на кнопке показывает, сколько магазинов в категории.")
     return html, rows
 
 
-@action("cattog", "cities")
-async def act_city_categories_toggle(ctx: Ctx):
-    value = 0 if ctx.app.catalog.setting("city_categories", 1) else 1
-    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('city_categories', ?)", (str(value),))
-    await ctx.reload()
-    return "a:catgs"
-
-
-@action("catmin", "cities")
-async def act_categories_min(ctx: Ctx):
-    return await ctx.ask("catmin", "Сколько магазинов должно быть в городе, чтобы показывать категории? "
-                                   "Если меньше или столько же, откроется сразу список магазинов. Отправьте число, "
-                                   "например 6. 0 значит показывать категории всегда.", "a:catgs")
-
-
-@on_input("catmin", "cities")
-async def in_categories_min(ctx: Ctx, message: Message):
-    text = (message.text or "").strip()
-    if not text.isdigit() or int(text) > 1000:
-        raise InputError("Нужно число от 0 до 1000.")
-    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('city_categories_min', ?)", (text,))
-    await ctx.reload()
-    await ctx.log("settings", f"city_categories_min={text}")
-    return "a:catgs"
-
-
-@action("catnew", "cities")
+@action("catnew", CP)
 async def act_category_new(ctx: Ctx):
-    return await ctx.ask("catnew", "Отправьте название категории. Можно сразу несколько, каждую с новой строки.\n"
-                                   "Премиум-эмодзи в начале станет иконкой кнопки.", "a:catgs")
+    return await ctx.ask("catnew", "Отправьте названия категорий, каждую с новой строки. Через запятую после "
+                                   "названия можно сразу написать, как ещё её ищут:\n"
+                                   "<code>ST, ст, стафф\nHSH, хш\nDS</code>", "a:catgs")
 
 
-@on_input("catnew", "cities")
+@on_input("catnew", CP)
 async def in_category_new(ctx: Ctx, message: Message):
-    names = [" ".join(n.split())[:64] for n in (message.text or "").split("\n") if n.strip()]
-    if not names:
+    lines = [split_words(line) for line in (message.text or "").split("\n")]
+    lines = [line for line in lines if line]
+    if not lines:
         raise InputError("Нужен текст.")
     db = ctx.app.db
-    pos = (await db.fetchval("SELECT COALESCE(MAX(position), -1) + 1 FROM categories")) or 0
-    if len(names) == 1:  # одна категория — можно с премиум-иконкой
-        label, icon = parse_label(message)
-        cat_id = await db.execute("INSERT INTO categories(label, icon, position) VALUES (?, ?, ?)", (label, icon, pos))
-        await ctx.reload()
-        await ctx.log("cat.create", label)
-        return f"a:catg:{cat_id}"
-    await db.executemany("INSERT INTO categories(label, position) VALUES (?, ?)",
-                         ((n, pos + i) for i, n in enumerate(names)))
+    existing = {c.label.casefold() for c in ctx.app.catalog.categories.values()}
+    added = []
+    for name, *words in lines:
+        name = name[:64]
+        if name.casefold() in existing:
+            continue
+        existing.add(name.casefold())
+        await db.execute("INSERT INTO categories(label, words) VALUES (?, ?)", (name, ", ".join(words)[:500]))
+        added.append(name)
     await ctx.reload()
-    await ctx.log("cat.create", ", ".join(names))
-    ctx.notice = f"✅ Добавлено категорий: {len(names)}"
+    if added:
+        await ctx.log("cat.create", ", ".join(added))
+    ctx.notice = f"✅ Добавлено категорий: {len(added)}" if added else "Такие категории уже есть"
     return "a:catgs"
 
 
-@view("catg", "cities")
+@view("catg", CP)
 async def view_category(ctx: Ctx, cat_id: str) -> ViewResult:
-    app = ctx.app
-    row = await app.db.fetchone("SELECT * FROM categories WHERE id = ?", (int(cat_id),))
-    if row is None:
+    cat = ctx.app.catalog
+    c = cat.categories.get(int(cat_id))
+    if c is None:
         return await view_categories(ctx)
-    html = (f"🗂 <b>{escape(row['label'])}</b>\n"
-            f"Статус: {'видна' if row['is_active'] else '🙈 скрыта'}\n"
-            f"Иконка: {icon_line(row['icon'])}\n"
-            f"Магазинов: {len(app.catalog.by_category.get(row['id'], []))}")
-    rows = editor_rows("cat", cat_id, row, label=True, rich=False)
-    rows.append([b("⬆️ Выше", f"x:catmv:{cat_id}:-1"), b("⬇️ Ниже", f"x:catmv:{cat_id}:1")])
-    rows.append([b("🙈 Скрыть" if row["is_active"] else "👁 Показать", f"x:catact:{cat_id}"),
-                 b("🗑 Удалить", f"a:catdel:{cat_id}", "danger")])
-    rows.append(back_btn("a:catgs"))
+    shops = cat.by_category.get(c.id, [])
+    names = ", ".join(s.label for s in shops[:30]) + (" и другие" if len(shops) > 30 else "")
+    html = (f"🗂 <b>{escape(c.label)}</b>\n"
+            f"Ещё пишут: {escape(c.words) or 'не указано'}\n"
+            f"Магазинов: {len(shops)}" + (f"\n{escape(names)}" if names else ""))
+    rows = [[b("✏️ Название", f"x:catren:{cat_id}"), b("🔤 Как ещё пишут", f"x:catw:{cat_id}")],
+            [b("🗑 Удалить", f"a:catdel:{cat_id}", "danger")],
+            back_btn("a:catgs")]
     return html, rows
 
 
-@action("catmv", "cities")
-async def act_category_move(ctx: Ctx, cat_id: str, delta: str):
-    await move(ctx, "categories", int(cat_id), int(delta))
-    return f"a:catg:{cat_id}"
+@action("catren", CP)
+async def act_category_rename(ctx: Ctx, cat_id: str):
+    return await ctx.ask("catren", "Отправьте новое название категории.", f"a:catg:{cat_id}", cat_id)
 
 
-@action("catact", "cities")
-async def act_category_active(ctx: Ctx, cat_id: str):
-    await ctx.app.db.execute("UPDATE categories SET is_active = 1 - is_active WHERE id = ?", (int(cat_id),))
+@on_input("catren", CP)
+async def in_category_rename(ctx: Ctx, message: Message, cat_id: str):
+    name = " ".join((message.text or "").split())[:64]
+    if not name:
+        raise InputError("Нужен текст.")
+    await ctx.app.db.execute("UPDATE categories SET label = ? WHERE id = ?", (name, int(cat_id)))
     await ctx.reload()
+    ctx.notice = "✅ Название сохранено"
     return f"a:catg:{cat_id}"
 
 
-@view("catdel", "cities")
+@action("catw", CP)
+async def act_category_words(ctx: Ctx, cat_id: str):
+    return await ctx.ask("catw", "Как ещё люди могут написать эту категорию? Через запятую, например:\n"
+                                 "<code>ст, стафф, stuff</code>\n\nОтправьте знак минус, чтобы очистить.",
+                         f"a:catg:{cat_id}", cat_id)
+
+
+@on_input("catw", CP)
+async def in_category_words(ctx: Ctx, message: Message, cat_id: str):
+    text = (message.text or "").strip()
+    if not text:
+        raise InputError("Нужен текст.")
+    words = "" if text == "-" else ", ".join(split_words(text))[:500]
+    await ctx.app.db.execute("UPDATE categories SET words = ? WHERE id = ?", (words, int(cat_id)))
+    await ctx.reload()
+    ctx.notice = "✅ Сохранено" if words else "Очищено"
+    return f"a:catg:{cat_id}"
+
+
+@view("catdel", CP)
 async def view_category_delete(ctx: Ctx, cat_id: str) -> ViewResult:
     c = ctx.app.catalog.categories.get(int(cat_id))
-    return (f"🗑 Удалить категорию <b>{escape(c.label if c else cat_id)}</b>? Магазины останутся.",
+    return (f"🗑 Удалить категорию <b>{escape(c.label if c else cat_id)}</b>? Магазины останутся, "
+            "с них просто снимется эта галочка.",
             [[b("🗑 Да, удалить", f"x:catdel:{cat_id}", "danger"), b("✖️ Отмена", f"a:catg:{cat_id}")]])
 
 
-@action("catdel", "cities")
+@action("catdel", CP)
 async def act_category_delete(ctx: Ctx, cat_id: str):
     c = ctx.app.catalog.categories.get(int(cat_id))
     await ctx.app.db.execute("DELETE FROM categories WHERE id = ?", (int(cat_id),))

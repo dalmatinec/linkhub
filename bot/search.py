@@ -59,6 +59,35 @@ def stem(word: str) -> str:
     return word
 
 
+_LAT = [("sch", "щ"), ("sh", "ш"), ("ch", "ч"), ("zh", "ж"), ("kh", "х"), ("ts", "ц"), ("ya", "я"), ("yu", "ю"),
+        ("yo", "е"), ("a", "а"), ("b", "б"), ("c", "к"), ("d", "д"), ("e", "е"), ("f", "ф"), ("g", "г"), ("h", "х"),
+        ("i", "и"), ("j", "дж"), ("k", "к"), ("l", "л"), ("m", "м"), ("n", "н"), ("o", "о"), ("p", "п"), ("q", "к"),
+        ("r", "р"), ("s", "с"), ("t", "т"), ("u", "у"), ("v", "в"), ("w", "в"), ("x", "кс"), ("y", "й"), ("z", "з")]
+_CYR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k",
+        "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h",
+        "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+        "қ": "k", "ғ": "g", "ү": "u", "ұ": "u", "ө": "o", "ә": "a", "і": "i", "ң": "n", "һ": "h"}
+
+
+def translit(word: str) -> str:
+    """Латиница ↔ кирилица по звучанию: «hsh» → «хш», «ст» → «st». Смешанное слово не трогаем."""
+    if re.fullmatch(r"[a-z0-9 ]+", word):
+        out, i = [], 0
+        while i < len(word):
+            for lat, cyr in _LAT:
+                if word.startswith(lat, i):
+                    out.append(cyr)
+                    i += len(lat)
+                    break
+            else:
+                out.append(word[i])
+                i += 1
+        return "".join(out)
+    if re.fullmatch(r"[а-яёқғүұөәіңһ0-9 ]+", word):
+        return "".join(_CYR.get(ch, ch) for ch in word.replace("ё", "е"))
+    return word
+
+
 def _names(label: str) -> str:
     """Название без эмодзи: «🔐 VPN» → «vpn»."""
     return " ".join(WORD_RE.findall(label)).casefold().replace("ё", "е")
@@ -83,7 +112,7 @@ class Query:
     words: list[str] = field(default_factory=list)
     cities: set[int] = field(default_factory=set)
     categories: set[int] = field(default_factory=set)
-    category_stems: list[str] = field(default_factory=list)  # магазин без категории, но с «vpn» в тексте — тоже найдётся
+    category_stems: list[str] = field(default_factory=list)  # магазин без галочки, но с «vpn» в тексте тоже найдётся
     tags: set[int] = field(default_factory=set)
     price_max: int | None = None
     price_min: int | None = None
@@ -135,7 +164,13 @@ def parse(cat: Catalog, text: str) -> Query:
         return out
 
     cities = names("city", [c for c in cat.cities.values() if c.is_active])
-    categories = names("cat", cat.active_categories)
+    # категория узнаётся по названию, по «как ещё пишут» и по тем же словам в другой раскладке букв
+    categories = []
+    for c in cat.active_categories:
+        for word in [c.label, *c.words.split(",")]:
+            name = _names(word)
+            if name:
+                categories += [(c.id, name), (c.id, translit(name))]
     tags = names("tag", cat.tags.values())
 
     tokens = WORD_RE.findall(text)
@@ -155,7 +190,7 @@ def parse(cat: Catalog, text: str) -> Query:
                 if any(_matches_name(v, name) for v in variants):
                     target.add(obj_id)
                     if target is q.categories:
-                        q.category_stems.extend(stem(v) for v in variants)
+                        q.category_stems.extend(v for v in variants)
                     hit = True
                     break
             if hit:
@@ -164,6 +199,19 @@ def parse(cat: Catalog, text: str) -> Query:
             q.words.append(tok)
         i += 1
     return q
+
+
+def _mentions(key: str, words: list[str]) -> bool:
+    """Есть ли слово в тексте магазина. Короткие коды (ST, DS) только целым словом, иначе «ст» найдётся в «стоимость»."""
+    tokens = None
+    for w in words:
+        if len(w) <= 3:
+            tokens = tokens if tokens is not None else set(WORD_RE.findall(key))
+            if w in tokens or translit(w) in tokens:
+                return True
+        elif stem(w) in key:
+            return True
+    return False
 
 
 def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
@@ -177,8 +225,7 @@ def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
         if q.cities and not (shop.cities & q.cities):
             continue
         key = shop.search_key.replace("ё", "е")
-        if q.categories and not (shop.categories & q.categories) \
-                and not any(s in key for s in q.category_stems):
+        if q.categories and not (shop.categories & q.categories) and not _mentions(key, q.category_stems):
             continue
         if q.tags and not (set(shop.tags) & q.tags):
             continue

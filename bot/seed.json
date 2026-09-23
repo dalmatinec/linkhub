@@ -16,7 +16,6 @@
     "log_chat_id": 0,
     "log_admin_actions": 1,
     "expiry_notify_hours": 24,
-    "city_categories": 1,
     "base_lang": "ru",
     "languages": {
       "ru": "🇷🇺 Русский",
@@ -28,7 +27,6 @@
       "kk",
       "en"
     ],
-    "city_categories_min": 6,
     "card_show_cities": 1,
     "search_synonyms": [
       [
@@ -149,11 +147,11 @@
     }
   ],
   "categories": [
-    "🔐 VPN",
-    "🎁 Подарки",
-    "⭐️ Звёзды",
-    "🎟 Сертификаты",
-    "🎮 Скины"
+    "VPN",
+    "Подарки",
+    "Звёзды",
+    "Сертификаты",
+    "Скины"
   ],
   "app_fields": [
     {

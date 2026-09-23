@@ -46,7 +46,6 @@ def translatables(app: App) -> list[Item]:
             out.append(Item("item", str(item.id), "html", f"{name}: текст экрана", item.html))
     out += [Item("city", str(c.id), "label", f"Город: {c.label}", c.label) for c in cat.cities.values()]
     out += [Item("tag", str(t.id), "label", f"Метка: {t.label}", t.label) for t in cat.tags.values()]
-    out += [Item("cat", str(c.id), "label", f"Категория: {c.label}", c.label) for c in cat.categories.values()]
     for f in cat.fields:
         out.append(Item("field", str(f.id), "label", f"Анкета, {f.label}: название", f.label))
         out.append(Item("field", str(f.id), "html", f"Анкета, {f.label}: вопрос", f.html))

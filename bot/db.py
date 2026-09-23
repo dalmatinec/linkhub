@@ -263,6 +263,11 @@ MIGRATIONS: list[str] = [
     """
     ALTER TABLE shops ADD COLUMN keywords TEXT NOT NULL DEFAULT '';
     """,
+    # 5 — категории стали словами для поиска: другие написания, кнопка «Категории» в меню больше не нужна
+    """
+    ALTER TABLE categories ADD COLUMN words TEXT NOT NULL DEFAULT '';
+    DELETE FROM menu_items WHERE kind = 'categories';
+    """,
 ]
 
 

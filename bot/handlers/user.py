@@ -4,10 +4,9 @@ Callback-данные (≤64 байт):
   m:<item>                      пункт меню
   l:<item>:<page>               список магазинов пункта (метка / все / избранное)
   o:<item>:<page>               другие города
-  y:<city>:<item>:<page>        город: категории (или сразу магазины, если категорий нет)
-  k:<city>:<cat>:<item>:<page>  магазины города в категории (cat=0 — все магазины города)
-  g:<cat>:<item>:<page>         магазины категории во всех городах
-  s:<shop>:<ctx>                карточка; ctx — куда вести «Назад» (m1, l5.0, y3.4.0, k3.2.4.0, g2.4.0, q0)
+  y:<city>:<item>:<page>        магазины города
+  k:..., g:...                  кнопки категорий из старых версий: ведут в город или в меню
+  s:<shop>:<ctx>                карточка; ctx — куда вести «Назад» (m1, l5.0, y3.4.0, q0; k и g остались от старых версий)
   f:<shop>:<ctx>                добавить/убрать из избранного
   q:<page>                      результаты поиска
   r:<shop>:<ctx>                жалоба
@@ -162,62 +161,10 @@ def screen_city(app: App, tr: Tr, city_id: int, item_id: int, page: int):
     city = cat.cities.get(city_id)
     if city is None:
         return None
-    city_name = tr.label("city", city)
-    cats = cat.city_categories.get(city_id, []) if cat.setting("city_categories", 1) else []
-    if len(cat.by_city.get(city_id, [])) <= int(cat.setting("city_categories_min", 6)):
-        cats = []  # магазинов мало — категории только мешают
-    if not cats:  # категорий нет — сразу магазины
-        header = fill(tr.text("city_shops"), city=city_name)
-        html, kb = shop_list(app, tr, cat.by_city.get(city_id, []), page, header, f"y{city_id}.{item_id}.",
-                             f"y:{city_id}:{item_id}:", city_back(app, city_id, item_id))
-        return html, cat.text("city_shops").media_id, markup(kb)
-    chunk, page, pages = paginate(cats, page, int(cat.setting("page_size", 10)))
-    btns = [button(tr.label("cat", c), c.icon, c.style, cb=f"k:{city_id}:{c.id}:{item_id}:0") for c in chunk]
-    btns.append(sys_button(tr, "all_shops", f"k:{city_id}:0:{item_id}:0"))
-    kb = grid(btns, int(cat.setting("per_row", 2)))
-    kb.append(nav_row(tr, page, pages, lambda p: f"y:{city_id}:{item_id}:{p}"))
-    kb.append([sys_button(tr, "back", city_back(app, city_id, item_id))])
-    return fill(tr.text("city_categories"), city=city_name), cat.text("city_categories").media_id, markup(kb)
-
-
-def screen_city_category(app: App, tr: Tr, city_id: int, cat_id: int, item_id: int, page: int):
-    cat = app.catalog
-    city = cat.cities.get(city_id)
-    category = cat.categories.get(cat_id)
-    if city is None or (cat_id and category is None):
-        return None
-    if cat_id:
-        shops = cat.by_city_category.get((city_id, cat_id), [])
-        header = fill(tr.text("city_category_shops"), city=tr.label("city", city), category=tr.label("cat", category))
-    else:
-        shops = cat.by_city.get(city_id, [])
-        header = fill(tr.text("city_shops"), city=tr.label("city", city))
-    html, kb = shop_list(app, tr, shops, page, header, f"k{city_id}.{cat_id}.{item_id}.",
-                         f"k:{city_id}:{cat_id}:{item_id}:", f"y:{city_id}:{item_id}:0")
-    return html, None, markup(kb)
-
-
-def screen_categories(app: App, tr: Tr, item: MenuItem):
-    cat = app.catalog
-    cats = [c for c in cat.active_categories if cat.by_category.get(c.id)]
-    btns = [button(tr.label("cat", c), c.icon, c.style, cb=f"g:{c.id}:{item.id}:0") for c in cats]
-    kb = grid(btns, int(cat.setting("per_row", 2)))
-    kb.append(back_to_parent(tr, item))
-    html = tr.html("item", item) or tr.text("categories")
-    if not cats:
-        html += "\n\n" + tr.text("empty")
-    return html, item.media_id, markup(kb)
-
-
-def screen_category(app: App, tr: Tr, cat_id: int, item_id: int, page: int):
-    cat = app.catalog
-    category = cat.categories.get(cat_id)
-    if category is None:
-        return None
-    header = fill(tr.text("category_shops"), category=tr.label("cat", category))
-    html, kb = shop_list(app, tr, cat.by_category.get(cat_id, []), page, header, f"g{cat_id}.{item_id}.",
-                         f"g:{cat_id}:{item_id}:", f"m:{item_id}")
-    return html, None, markup(kb)
+    header = fill(tr.text("city_shops"), city=tr.label("city", city))
+    html, kb = shop_list(app, tr, cat.by_city.get(city_id, []), page, header, f"y{city_id}.{item_id}.",
+                         f"y:{city_id}:{item_id}:", city_back(app, city_id, item_id))
+    return html, cat.text("city_shops").media_id, markup(kb)
 
 
 _PERSON_LINK = re.compile(r"^https://t\.me/([A-Za-z0-9_]{4,32})/?$")
@@ -332,8 +279,6 @@ async def cb_menu(call: CallbackQuery, state: FSMContext, app: App, tr: Tr, lang
         await show(app, uid, chat_id, *screen_item_list(app, tr, item, 0, favs), current=cur)
     elif item.kind == "cities":
         await show(app, uid, chat_id, *screen_cities(app, tr, item, uid), current=cur)
-    elif item.kind == "categories":
-        await show(app, uid, chat_id, *screen_categories(app, tr, item), current=cur)
     elif item.kind == "language":
         await show(app, uid, chat_id, *screen_language(app, tr, item, lang), current=cur)
     elif item.kind == "apply":
@@ -386,15 +331,14 @@ async def cb_city(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> N
 
 @router.callback_query(F.data.startswith("k:"))
 async def cb_city_category(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> None:
-    _, city_id, cat_id, item_id, page = call.data.split(":")
-    await _show_or_home(call, state, app, tr,
-                        screen_city_category(app, tr, int(city_id), int(cat_id), int(item_id), int(page)))
+    """Старые кнопки категорий внутри города: теперь просто список магазинов города."""
+    _, city_id, _cat_id, item_id, _page = call.data.split(":")
+    await _show_or_home(call, state, app, tr, screen_city(app, tr, int(city_id), int(item_id), 0))
 
 
 @router.callback_query(F.data.startswith("g:"))
 async def cb_category(call: CallbackQuery, state: FSMContext, app: App, tr: Tr) -> None:
-    _, cat_id, item_id, page = call.data.split(":")
-    await _show_or_home(call, state, app, tr, screen_category(app, tr, int(cat_id), int(item_id), int(page)))
+    await _show_or_home(call, state, app, tr, None)
 
 
 @router.callback_query(F.data.startswith("s:"))

@@ -65,12 +65,14 @@ class City:
 
 @dataclass(slots=True)
 class Category:
+    """Категория товаров. Покупатели её не видят, она работает только в поиске."""
     id: int
     label: str
     icon: str | None
     style: str | None
     position: int
     is_active: bool
+    words: str = ""  # как ещё могут написать: «ст, стафф»
 
 
 @dataclass(slots=True)
@@ -138,8 +140,6 @@ class Catalog:
         self.active_categories: list[Category] = []
         self.other_shops: list[Shop] = []  # магазины хотя бы в одном не главном городе
         self.by_category: dict[int, list[Shop]] = {}
-        self.by_city_category: dict[tuple[int, int], list[Shop]] = {}
-        self.city_categories: dict[int, list[Category]] = {}
         self._tr_cache: dict[str, "Tr"] = {}
 
     # ---------- загрузка ----------
@@ -172,8 +172,9 @@ class Catalog:
         }
 
         self.categories = {
-            r["id"]: Category(r["id"], r["label"], r["icon"], r["style"], r["position"], bool(r["is_active"]))
-            for r in await db.fetchall("SELECT * FROM categories ORDER BY position, id")
+            r["id"]: Category(r["id"], r["label"], r["icon"], r["style"], r["position"], bool(r["is_active"]),
+                              r["words"])
+            for r in await db.fetchall("SELECT * FROM categories ORDER BY label COLLATE NOCASE, id")
         }
         self.fields = [
             AppField(r["id"], r["label"], r["html"], r["kind"], r["role"], bool(r["required"]), r["position"])
@@ -238,16 +239,9 @@ class Catalog:
         self.active_categories = [c for c in self.categories.values() if c.is_active]
         active_cat_ids = {c.id for c in self.active_categories}
         self.by_category = {c.id: [] for c in self.active_categories}
-        self.by_city_category = {}
         for shop in self.all_shops:  # all_shops уже отсортирован по рангу
             for cat_id in shop.categories & active_cat_ids:
                 self.by_category[cat_id].append(shop)
-                for city_id in shop.cities:
-                    self.by_city_category.setdefault((city_id, cat_id), []).append(shop)
-        self.city_categories = {
-            city_id: [c for c in self.active_categories if (city_id, c.id) in self.by_city_category]
-            for city_id in self.cities
-        }
 
     def shop_rank(self, shop: Shop) -> tuple[int, int, int]:
         """Сначала магазины с меткой повыше (Премиум, потом Топ), потом остальные."""

@@ -202,23 +202,10 @@ def test_admin_creates_shop_and_user_sees_it(tmp_path):
 
         await h.press(USER, "Назад")
         await h.press(USER, "Алматы")
-        assert h.labels(USER)[0] == ["Gift Shop"], "магазинов мало — сразу список, без категорий"
-        await h.app.db.execute("UPDATE settings SET value = '0' WHERE key = 'city_categories_min'")
-        await h.app.catalog.reload()
-        await h.press(USER, "Назад")
-        await h.press(USER, "Алматы")
-        assert h.labels(USER)[0] == ["🔐 VPN", "📋 Все магазины"], "в городе сначала категории"
-        await h.press(USER, "VPN")
-        assert "VPN" in h.screen(USER).text and h.labels(USER)[0] == ["Gift Shop"]
-        await h.press(USER, "Gift Shop")
-        await h.press(USER, "Назад")
-        assert h.labels(USER)[0] == ["Gift Shop"], "назад из карточки — в ту же категорию"
-        await h.press(USER, "Назад")
-        await h.press(USER, "Все магазины")
-        assert h.labels(USER)[0] == ["Gift Shop"]
-        await h.click(OWNER, "x:cattog")  # категории в городе выключены — сразу магазины
-        await h.click(USER, f"y:{next(c.id for c in h.app.catalog.cities.values() if c.label == 'Алматы')}:"
-                            f"{next(i.id for i in h.app.catalog.menu.values() if i.kind == 'city_block')}:0")
+        assert h.labels(USER)[0] == ["Gift Shop"], "в городе сразу список магазинов"
+        almaty = next(c.id for c in h.app.catalog.cities.values() if c.label == "Алматы")
+        block = next(i.id for i in h.app.catalog.menu.values() if i.kind == "city_block")
+        await h.click(USER, f"k:{almaty}:1:{block}:0")  # кнопка категории из старой версии
         assert h.labels(USER)[0] == ["Gift Shop"]
 
         # поиск
@@ -334,7 +321,7 @@ def test_moderator_permissions(tmp_path):
         await h.send(77, "/admin")
         assert [r for r in h.labels(77)] == [["🏪 Магазины"], ["⚙️ Настройки каталога"]]
         await h.click(77, "a:cfg")
-        assert h.labels(77)[0] == ["🔍 Похожие слова"], "из настроек только словарь поиска"
+        assert h.labels(77)[0] == ["🗂 Категории товаров", "🔍 Похожие слова"], "из настроек только то, что про поиск"
         await h.click(77, "a:users")
         assert "Нет доступа" in h.screen(77).text
         await h.stop()
@@ -666,6 +653,38 @@ def test_hidden_keywords_and_synonyms(tmp_path):
         await h.send(OWNER, "вэпээн, vpn\nодно")
         assert h.app.catalog.setting("search_synonyms") == [["вэпээн", "vpn"]]
         assert names("вэпээн") == ["Gift Shop"], "похожее слово ведёт на категорию VPN"
+    run(scenario())
+
+
+def test_categories_as_search_words(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await h.send(OWNER, "/admin")
+        await h.press(OWNER, "Магазины")
+        await h.press(OWNER, "Добавить")
+        await h.send(OWNER, "Codes Shop")
+        shop = max(h.app.catalog.shops)
+        assert "отметьте, какие товары" in h.screen(OWNER).text, "после создания сразу галочки категорий"
+        await h.click(OWNER, f"x:scatnew:{shop}")
+        await h.send(OWNER, "HSH\nST, стафф")
+        cats = {c.label: c for c in h.app.catalog.categories.values()}
+        assert cats["ST"].words == "стафф" and cats["ST"].id in h.app.catalog.shops[shop].categories
+        await h.click(OWNER, f"x:htm:shop:{shop}")
+        await h.send(OWNER, "Стоимость по запросу")
+        await h.click(OWNER, f"x:sact:{shop}")
+        other = await make_shop(h, "Other Shop")
+        await h.click(OWNER, f"x:htm:shop:{other}")
+        await h.send(OWNER, "Стоимость по запросу, стафф")
+
+        from bot import search
+        names = lambda q: sorted(s.label for s in search.run(h.app.catalog, q)[0])  # noqa: E731
+        assert names("hsh") == ["Codes Shop"]
+        assert names("ХШ") == ["Codes Shop"], "латиница и кириллица сами"
+        assert names("st") == names("ст") == ["Codes Shop"], "короткий код не ищется внутри слов"
+        assert names("стафф") == ["Codes Shop", "Other Shop"], "другое написание и слово в тексте"
+
+        await h.send(USER, "/start")
+        assert not any("Категории" in label for row in h.labels(USER) for label in row)
     run(scenario())
 
 

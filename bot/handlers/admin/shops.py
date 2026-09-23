@@ -89,6 +89,9 @@ async def in_shop_new(ctx: Ctx, message: Message):
     await ctx.log("shop.create", f"{shop_id}: {label}")
     ctx.notice = ("✅ Магазин создан <b>скрытым</b>. Заполните карточку, выберите метки и города, "
                   "затем нажмите 👁 Опубликовать.")
+    if ctx.app.catalog.categories:  # сразу отметить, что продаёт
+        ctx.notice = "✅ Магазин создан <b>скрытым</b>. Сначала отметьте, какие товары в нём есть."
+        return f"a:scats:{shop_id}"
     return f"a:shop:{shop_id}"
 
 
@@ -559,10 +562,42 @@ async def view_shop_categories(ctx: Ctx, shop_id: str) -> ViewResult:
     if shop is None:
         return await view_shops(ctx)
     rows = grid([b(f"{'✅' if c.id in shop.categories else '▫️'} {c.label}", f"x:scat:{shop_id}:{c.id}")
-                 for c in cat.categories.values()], 2)
-    rows.append(back_btn(f"a:shop:{shop_id}"))
-    return (f"🗂 <b>Категории: {escape(shop.label)}</b>\nОтметьте, что продаёт магазин. "
+                 for c in cat.categories.values()], 3)
+    rows.append([b("➕ Новая категория", f"x:scatnew:{shop_id}")])
+    rows.append([b("✅ Готово", f"a:shop:{shop_id}", "success")])
+    return (f"🗂 <b>Категории: {escape(shop.label)}</b>\nОтметьте, какие товары есть в магазине. "
+            "Покупатели галочки не видят, но поиск по этим словам найдёт магазин. "
             "Поменялся ассортимент, просто переставьте галочки."), rows
+
+
+@action("scatnew", P)
+async def act_shop_category_new(ctx: Ctx, shop_id: str):
+    return await ctx.ask("scatnew", "Отправьте название новой категории. Можно несколько, каждую с новой строки. "
+                                    "Через запятую после названия можно написать, как ещё её ищут:\n"
+                                    "<code>HSH, хш</code>\nНовые категории сразу отметятся у этого магазина.",
+                         f"a:scats:{shop_id}", shop_id)
+
+
+@on_input("scatnew", P)
+async def in_shop_category_new(ctx: Ctx, message: Message, shop_id: str):
+    from .content import split_words
+    db = ctx.app.db
+    by_name = {c.label.casefold(): c.id for c in ctx.app.catalog.categories.values()}
+    lines = [w for w in (split_words(line) for line in (message.text or "").split("\n")) if w]
+    if not lines:
+        raise InputError("Нужен текст.")
+    for name, *words in lines:
+        cat_id = by_name.get(name[:64].casefold())
+        if cat_id is None:
+            cat_id = await db.execute("INSERT INTO categories(label, words) VALUES (?, ?)",
+                                      (name[:64], ", ".join(words)[:500]))
+            by_name[name[:64].casefold()] = cat_id
+            await ctx.log("cat.create", name)
+        await db.execute("INSERT OR IGNORE INTO shop_categories(shop_id, category_id) VALUES (?, ?)",
+                         (int(shop_id), cat_id))
+    await ctx.reload()
+    await ctx.log("shop.categories", shop_id)
+    return f"a:scats:{shop_id}"
 
 
 @action("scat", P)
