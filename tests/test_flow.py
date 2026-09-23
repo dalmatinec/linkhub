@@ -746,3 +746,18 @@ def test_admin_menu_shows_city_buttons(tmp_path):
         await h.press(OWNER, "Другие города")
         assert h.find(OWNER, "Текст и иконка") and h.find(OWNER, "Цвет")
     run(scenario())
+
+
+def test_admin_home_is_short(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await h.send(OWNER, "/admin")
+        assert h.labels(OWNER) == [["🏪 Магазины", "📝 Заявки"], ["📣 Рассылка", "🚩 Жалобы"],
+                                   ["📊 Статистика", "👥 Пользователи"], ["⚙️ Настройки каталога"]]
+        await h.press(OWNER, "Настройки каталога")
+        await h.press(OWNER, "Города")
+        await h.press(OWNER, "Назад")
+        assert "Настройки каталога" in h.screen(OWNER).text, "назад из раздела настроек ведёт в настройки"
+        await h.press(OWNER, "Меню")
+        assert "Главное меню" in h.screen(OWNER).text
+    run(scenario())

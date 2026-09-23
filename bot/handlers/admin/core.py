@@ -561,28 +561,20 @@ async def view_home(ctx: Ctx) -> ViewResult:
     app = ctx.app
     perms = app.perms(ctx.user_id) or set()
     new_apps = await app.db.fetchval("SELECT COUNT(*) FROM applications WHERE status = 'new'")
+    open_reports = await app.db.fetchval("SELECT COUNT(*) FROM reports WHERE status = 'open'")
+    # на главном экране только ежедневное; всё, что настраивается один раз, в «Настройках каталога»
     sections = [
         ("shops", "🏪 Магазины", "a:shops:0"),
         ("applications", f"📝 Заявки{f' ({new_apps})' if new_apps else ''}", "a:appls:new:0"),
-        ("menu", "📋 Меню", f"a:item:{app.catalog.root_id}"),
-        ("texts", "📝 Тексты и кнопки", "a:texts"),
-        ("cities", "🏙 Города", "a:cities:0"),
-        ("cities", "🏷 Метки", "a:tags"),
-        ("cities", "🗂 Категории", "a:catgs"),
-        ("texts", "🌐 Языки", "a:langs"),
-        ("users", "👥 Пользователи", "a:users"),
         ("broadcast", "📣 Рассылка", "a:bc"),
+        ("reports", f"🚩 Жалобы{f' ({open_reports})' if open_reports else ''}", "a:reps:0"),
         ("stats", "📊 Статистика", "a:stats"),
-        ("reports", "🚩 Жалобы", "a:reps:0"),
-        ("settings", "🛡 Защита", "a:prot"),
-        ("settings", "⚙️ Настройки", "a:set"),
-        ("backup", "💾 Бэкап", "a:bak"),
-        ("admins", "👮 Админы", "a:admins"),
-        ("log", "📜 Журнал", "a:log:0"),
+        ("users", "👥 Пользователи", "a:users"),
     ]
     btns = [b(t, cb) for p, t, cb in sections if "*" in perms or p in perms]
     rows = [btns[i:i + 2] for i in range(0, len(btns), 2)]
-    open_reports = await app.db.fetchval("SELECT COUNT(*) FROM reports WHERE status = 'open'")
+    if any("*" in perms or p in perms for p, _, _ in CONFIG_SECTIONS):
+        rows.append([b("⚙️ Настройки каталога", "a:cfg")])
     cat = app.catalog
     html = (
         "🛠 <b>Админ-панель</b>\n\n"
@@ -591,3 +583,29 @@ async def view_home(ctx: Ctx) -> ViewResult:
         f"Открытых жалоб: <b>{open_reports}</b>"
     )
     return html, rows
+
+
+# разделы, которые настраиваются один раз
+CONFIG_SECTIONS = [
+    ("menu", "📋 Меню", "a:item:0"),
+    ("texts", "📝 Тексты и кнопки", "a:texts"),
+    ("cities", "🏙 Города", "a:cities:0"),
+    ("cities", "🏷 Метки", "a:tags"),
+    ("cities", "🗂 Категории", "a:catgs"),
+    ("texts", "🌐 Языки", "a:langs"),
+    ("settings", "🛡 Защита", "a:prot"),
+    ("settings", "⚙️ Настройки", "a:set"),
+    ("backup", "💾 Бэкап", "a:bak"),
+    ("admins", "👮 Админы", "a:admins"),
+    ("log", "📜 Журнал", "a:log:0"),
+]
+
+
+@view("cfg")
+async def view_config(ctx: Ctx) -> ViewResult:
+    perms = ctx.app.perms(ctx.user_id) or set()
+    btns = [b(t, cb) for p, t, cb in CONFIG_SECTIONS if "*" in perms or p in perms]
+    rows = [btns[i:i + 2] for i in range(0, len(btns), 2)]
+    rows.append(back_btn("a:home"))
+    return ("⚙️ <b>Настройки каталога</b>\n\nЗдесь то, что обычно настраивается один раз: "
+            "меню, тексты, города, метки, категории, языки, защита, бэкапы и админы."), rows

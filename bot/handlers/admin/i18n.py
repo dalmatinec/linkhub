@@ -96,7 +96,7 @@ async def view_languages(ctx: Ctx) -> ViewResult:
     rows.append([b("📤 Файл: только новое и устаревшее", "x:trexp:todo")])
     rows.append([b("📤 Файл: все тексты", "x:trexp:all")])
     rows.append([b("📥 Загрузить переведённый файл", "x:trimp", "success")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     return "\n".join(lines), rows
 
 

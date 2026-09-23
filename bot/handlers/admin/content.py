@@ -119,7 +119,7 @@ async def view_texts(ctx: Ctx) -> ViewResult:
     rows += [[b(TEXT_NAMES[k], f"a:text:{k}")] for k in TEXT_NAMES if k in cat.texts]
     rows.append([button("Системные кнопки", cb="noop")])
     rows += grid([b(BUTTON_NAMES[k], f"a:btn:{k}") for k in BUTTON_NAMES if k in cat.buttons], 2)
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("📝 <b>Тексты и кнопки</b>\n\n"
             "Выберите, что изменить. Внутри каждого текста написано, где он показывается.\n"
             "Слова в фигурных скобках бот заменяет сам: <code>{имя}</code> на имя пользователя, "
@@ -183,7 +183,7 @@ async def view_cities(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("▶️", f"a:cities:{p + 1}"))
     rows.append(nav)
     rows.append([b("➕ Добавить города", "x:cnew", "success")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("🏙 <b>Города</b>\n\n⭐️ Главные: показываются прямо в главном меню.\n"
             "Остальные собраны под кнопкой 🌍 Другие города. Там сразу список магазинов из этих городов, "
             "а сам город написан в карточке магазина.\n🙈 Скрытые.")
@@ -280,7 +280,7 @@ async def view_tags(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
     rows: Rows = [[b(f"{t.label} · {len(cat.by_tag.get(t.id, []))}", f"a:tag:{t.id}")] for t in cat.tags.values()]
     rows.append([b("➕ Новая метка", "x:tnew", "success")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("🏷 <b>Метки</b>\n\n"
             "Метка это подборка магазинов: Премиум, Топ и другие. Порядок меток задаёт приоритет: "
             "в списках городов магазины с верхней меткой идут первыми.\n"
@@ -379,7 +379,7 @@ async def view_categories(ctx: Ctx) -> ViewResult:
                    "x:cattog")])
     rows.append([b(f"Показывать категории, если в городе больше {cat.setting('city_categories_min', 6)} магазинов",
                    "x:catmin")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("🗂 <b>Категории</b> (VPN, подарки, звёзды…)\n\n"
             "Магазину можно поставить несколько категорий: карточка магазина, затем 🗂 Категории.\n"
             "Когда категории внутри города включены, после выбора города человек сначала видит категории, "

@@ -47,7 +47,7 @@ async def view_protection(ctx: Ctx) -> ViewResult:
     rows.append([b(f"🧹 Удалять сообщения пользователей: {'да' if s('clean_chat', 1) else 'нет'}", "x:settog:clean_chat:prot")])
     rows.append([b(f"🔒 Запрет пересылки и сохранения: {'да' if s('protect_content', 1) else 'нет'}",
                    "x:settog:protect_content:prot")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("🛡 <b>Защита</b>\n\n"
             f"Антифлуд: если больше <b>{s('flood_limit')}</b> нажатий за <b>{s('flood_window')}</b> сек, "
             "бот просит не торопиться.\n"
@@ -72,7 +72,7 @@ async def view_settings(ctx: Ctx) -> ViewResult:
                       "x:settog:log_admin_actions:set")])
     rows.append([b(f"🔥 Прогреть медиа ({len(app.media.pending_warmup())} без file_id)", "x:warm"),
                  b("🧹 Удалить лишние медиа", "x:gc")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     total = sum(m.size for m in app.media.files.values()) / 1048576
     html = ("⚙️ <b>Настройки</b>\n\n"
             "📡 <b>Канал логов</b>: один приватный канал, куда бот шлёт ошибки, бэкапы, новые заявки, жалобы, "
@@ -209,7 +209,7 @@ async def view_backup(ctx: Ctx) -> ViewResult:
             "<b>Переезд на новый сервер:</b> копируете папку data целиком, либо восстанавливаете из архива.")
     rows = [[b("💾 Сделать бэкап сейчас", "x:bakgo", "success")],
             [b("♻️ Восстановить из архива", "x:bakrest", "danger")],
-            back_btn("a:home")]
+            back_btn("a:cfg")]
     return html, rows
 
 
@@ -273,5 +273,5 @@ async def view_log(ctx: Ctx, page: str = "0") -> ViewResult:
         nav.append(b("◀️ Новее", f"a:log:{p - 1}"))
     if len(rows_db) > size:
         nav.append(b("Старее ▶️", f"a:log:{p + 1}"))
-    return "📜 <b>Журнал действий</b>\n\n" + ("\n".join(lines) or "пусто"), [nav, back_btn("a:home")]
+    return "📜 <b>Журнал действий</b>\n\n" + ("\n".join(lines) or "пусто"), [nav, back_btn("a:cfg")]
 

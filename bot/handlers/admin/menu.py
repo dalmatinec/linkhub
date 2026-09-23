@@ -118,7 +118,7 @@ async def view_item(ctx: Ctx, item_id: str) -> ViewResult:
         rows.append([b("↕️ Переставить", f"a:arr:{item.parent_id}:{sid}"), b("⚙️ Ещё", f"a:imore:{sid}")])
     else:
         rows.append([b("👀 Предпросмотр", f"x:iprev:{sid}"), b("⚙️ Ещё", f"a:imore:{sid}")])
-    rows.append(back_btn(f"a:item:{item.parent_id}" if item.parent_id else "a:home"))
+    rows.append(back_btn(f"a:item:{item.parent_id}" if item.parent_id else "a:cfg"))
     return "\n".join(lines), rows
 
 

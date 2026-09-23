@@ -141,7 +141,7 @@ async def view_admins(ctx: Ctx) -> ViewResult:
     for uid, perms in app.catalog.admins.items():
         rows.append([b(f"👮 {names.get(uid) or uid} · прав: {len(perms)}", f"a:adm:{uid}")])
     rows.append([b("➕ Добавить админа", "x:adnew", "success")])
-    rows.append(back_btn("a:home"))
+    rows.append(back_btn("a:cfg"))
     html = ("👮 <b>Админы</b>\n\n👑 Владельцы из .env, у них все права.\n"
             "Остальным права выдаются галочками по разделам.")
     return html, rows
