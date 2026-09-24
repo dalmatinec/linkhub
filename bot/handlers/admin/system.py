@@ -200,7 +200,7 @@ async def view_clean(ctx: Ctx, back: str = "stats") -> ViewResult:
     rows: Rows = [[b(title, f"a:cleanok:{key}:{back}")] for key, (title, _) in CLEAN.items()]
     rows.append(back_btn(CLEAN_BACK.get(back, "a:home")))
     return ("🧹 <b>Очистка</b>\nЧто удалить? Магазины, меню, тексты, картинки и пользователи останутся. "
-            "Перед очисткой бот пришлёт бэкап."), rows
+            "Перед очисткой бот сам сделает бэкап на сервере."), rows
 
 
 @view("cleanok")
@@ -216,7 +216,7 @@ async def act_clean(ctx: Ctx, key: str, back: str):
     if not _owner(ctx) or key not in CLEAN:
         return "a:home"
     await ctx.app.flush()
-    await send_backup(ctx.app, ctx.chat_id, caption="💾 Бэкап перед очисткой")
+    await send_backup(ctx.app, "💾 Бэкап перед очисткой")
     await ctx.app.db.execute(CLEAN[key][1])
     await ctx.log("clean", CLEAN[key][0])
     ctx.notice = f"✅ Удалено: {CLEAN[key][0]}"
@@ -229,8 +229,8 @@ async def view_backup(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
     html = ("💾 <b>Бэкап</b>: база и все картинки в одном архиве\n\n"
             f"Каждый день в {cat.setting('backup_hour')}:00, последний: {cat.setting('last_backup_day', 'ещё не было')}\n"
-            f"Куда: {'канал логов' if ctx.app.log_chat else 'вам в личку (лучше подключить канал логов в Настройках)'}\n"
-            "На сервере хранятся 3 последних, старые удаляются сами.")
+            f"Лежат на сервере в <code>{escape(str(ctx.app.config.backup_dir.resolve()))}</code>, "
+            "хранятся 3 последних, старые удаляются сами. Забирать через WinSCP.")
     rows = [[b("💾 Сделать бэкап сейчас", "x:bakgo", "success")],
             [b("♻️ Восстановить из архива", "x:bakrest", "danger")],
             back_btn("a:cfg")]
@@ -240,8 +240,7 @@ async def view_backup(ctx: Ctx) -> ViewResult:
 @action("bakgo", "backup")
 async def act_backup_now(ctx: Ctx):
     await ctx.toast("Собираю архив…")
-    # есть канал логов: бэкап уходит туда, как ночной; нет канала: сюда в чат
-    ctx.notice = await send_backup(ctx.app, None if ctx.app.log_chat else ctx.chat_id, "💾 Бэкап")
+    ctx.notice = await send_backup(ctx.app, "💾 Бэкап")
     await ctx.log("backup.create")
     return "a:bak"
 

@@ -5,8 +5,6 @@ import logging
 from datetime import datetime, timedelta, timezone
 from html import escape
 
-from aiogram.exceptions import TelegramAPIError
-from aiogram.types import FSInputFile
 
 from .app import App
 from .backup import make_backup
@@ -19,7 +17,6 @@ FLUSH_EVERY = 30
 MAINTENANCE_EVERY = 300
 EVENTS_KEEP_DAYS = 180
 LOG_KEEP_DAYS = 90  # журнал действий админов
-SEND_LIMIT = 49 * 1024 * 1024  # бот может отправить файл до 50 МБ
 
 
 async def run_jobs(app: App, guard: GuardMiddleware) -> None:
@@ -91,39 +88,18 @@ async def daily_backup(app: App) -> None:
     cat.settings["last_backup_day"] = today
     await app.db.execute("DELETE FROM events WHERE ts < ?", (now() - EVENTS_KEEP_DAYS * 86400,))
     await app.db.execute("DELETE FROM admin_log WHERE ts < ?", (now() - LOG_KEEP_DAYS * 86400,))
-    await send_backup(app, None, caption="💾 Ежедневный бэкап")
+    await send_backup(app, "💾 Ежедневный бэкап")
     removed = await app.media.collect_garbage()  # картинки, которые уже нигде не стоят (они есть в бэкапе)
     if removed:
         log.info("Удалено неиспользуемых медиа: %s", removed)
 
 
-async def send_backup(app: App, chat_id: int | None, caption: str) -> str:
-    """Делает бэкап и отправляет его. chat_id=None: в канал логов, а без канала владельцам.
-    Возвращает строку для админа: куда ушёл архив или что пошло не так."""
+async def send_backup(app: App, caption: str) -> str:
+    """Делает бэкап на сервере (там хранятся 3 последних) и пишет об этом в канал логов.
+    Сам файл в Telegram не шлём: забирать его с сервера. Возвращает строку для админа."""
     path = await make_backup(app)
-    note = ""
-    if path.stat().st_size > SEND_LIMIT:
-        path = await make_backup(app, with_media=False)
-        note = "\n⚠️ Медиа не поместились в лимит Telegram (50 МБ), поэтому отправлена только база. Полный архив лежит на сервере в data/backups."
     size = f"{path.stat().st_size / 1048576:.1f} МБ"
-    targets = [chat_id] if chat_id else ([app.log_chat] if app.log_chat else sorted(app.config.owner_ids))
-    sent, errors = [], []
-    for target in targets:
-        try:
-            await app.bot.send_document(target, FSInputFile(path, filename=path.name),
-                                        caption=f"{caption} ({size})" + note, disable_notification=True)
-            sent.append(target)
-        except TelegramAPIError as e:
-            log.warning("Не удалось отправить бэкап в %s: %s", target, e)
-            errors.append(f"{target}: {e}")
-    if errors and not chat_id:  # в канал не ушло: шлём владельцам, чтобы бэкап не потерялся
-        for owner in sorted(app.config.owner_ids):
-            try:
-                await app.bot.send_document(owner, FSInputFile(path, filename=path.name),
-                                            caption=f"{caption} ({size})\n⚠️ В канал логов не отправился: "
-                                                    f"{escape(errors[0])[:300]}", disable_notification=True)
-            except TelegramAPIError:
-                pass
-    where = "в канал логов" if sent and not chat_id and app.log_chat else "сюда в чат"
-    result = f"✅ Бэкап {size} отправлен {where}." if sent else "⚠️ Бэкап не отправился: " + escape("; ".join(errors))[:300]
-    return result + note
+    folder = path.parent.resolve()
+    text = f"{caption}: <code>{escape(path.name)}</code> ({size})\nЛежит на сервере в <code>{escape(str(folder))}</code>"
+    await app.log_event(text)
+    return f"✅ Бэкап готов, {size}.\nЛежит на сервере в <code>{escape(str(folder))}</code>"
