@@ -17,12 +17,12 @@ python -m bot
 ### Сервер (systemd)
 
 ```bash
-sudo useradd --system --home /opt/linkhub --shell /usr/sbin/nologin linkhub
-sudo cp deploy/linkhub.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now linkhub
-journalctl -u linkhub -f        # логи
+git clone https://github.com/dalmatinec/linkhub /opt/linkhub
+bash /opt/linkhub/deploy/install.sh                  # спросит токен и ID владельца
+bash /opt/linkhub/deploy/install.sh /root/backup.zip # то же + восстановить всё из бэкапа
+journalctl -u linkhub -f                             # логи
 ```
-Обновление: `git pull && .venv/bin/pip install -r requirements.txt && sudo systemctl restart linkhub`.
+Обновление: `cd /opt/linkhub && git pull && systemctl restart linkhub`.
 
 Админка — команда **/admin** (видна только админам).
 

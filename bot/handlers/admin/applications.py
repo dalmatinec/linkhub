@@ -44,6 +44,8 @@ async def view_applications(ctx: Ctx, status: str = "new", page: str = "0") -> V
     rows.append(nav)
     rows.append([b(("• " if s == status else "") + t, f"a:appls:{s}:0") for s, t in STATUS.items()])
     rows.append([b("⚙️ Вопросы анкеты", "a:flds")])
+    if ctx.user_id in ctx.app.config.owner_ids:
+        rows.append([b("🧹 Удалить тестовые заявки", "a:cleanok:apps:appls")])
     rows.append(back_btn("a:home"))
     html = f"📝 <b>Заявки</b>, {STATUS[status]}: {len(rows_db)}"
     return html, rows

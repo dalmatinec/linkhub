@@ -138,12 +138,57 @@ async def view_item_more(ctx: Ctx, item_id: str) -> ViewResult:
     if item.kind == "menu" and not is_root:
         rows.append([b("👀 Предпросмотр", f"x:iprev:{sid}")])
     if not is_root:
+        rows.append([b("📂 Перенести в другое меню", f"a:imove:{sid}")])
         r = [b("🙈 Скрыть" if item.is_active else "👁 Показать", f"x:iact:{sid}")]
         if not item.is_system:
             r.append(b("🗑 Удалить", f"a:idel:{sid}", "danger"))
         rows.append(r)
     rows.append(back_btn(f"a:item:{sid}"))
     return f"⚙️ <b>{escape(item_title(item))}</b>: дополнительно", rows
+
+
+def _move_targets(ctx: Ctx, item: MenuItem) -> list[MenuItem]:
+    """Куда можно перенести кнопку: главный экран и подменю, кроме её собственных."""
+    cat = ctx.app.catalog
+
+    def inside(m: MenuItem) -> bool:  # m внутри переносимой кнопки (или она сама)
+        while m is not None:
+            if m.id == item.id:
+                return True
+            m = cat.menu.get(m.parent_id) if m.parent_id else None
+        return False
+
+    return [m for m in cat.menu.values()
+            if (m.id == cat.root_id or m.kind == "menu") and m.id != item.parent_id and not inside(m)]
+
+
+@view("imove", P)
+async def view_item_move(ctx: Ctx, item_id: str) -> ViewResult:
+    item = ctx.app.catalog.menu.get(int(item_id))
+    if item is None:
+        return await view_item(ctx, str(ctx.app.catalog.root_id))
+    root = ctx.app.catalog.root_id
+    rows: Rows = [[b("🏠 Главный экран" if m.id == root else f"📂 {item_title(m)}", f"x:imove:{item_id}:{m.id}")]
+                  for m in _move_targets(ctx, item)]
+    rows.append(back_btn(f"a:imore:{item_id}"))
+    return f"📂 Куда перенести <b>{escape(item_title(item))}</b>? Кнопка встанет последней строкой.", rows
+
+
+@action("imove", P)
+async def act_item_move(ctx: Ctx, item_id: str, target_id: str):
+    item = ctx.app.catalog.menu.get(int(item_id))
+    if item is None or int(target_id) not in {m.id for m in _move_targets(ctx, item)}:
+        return f"a:item:{item_id}"
+    db = ctx.app.db
+    row = await db.fetchval("SELECT COALESCE(MAX(row), -1) + 1 FROM menu_items WHERE parent_id = ?", (int(target_id),))
+    old_parent = item.parent_id
+    await db.execute("UPDATE menu_items SET parent_id = ?, row = ?, position = 0 WHERE id = ?",
+                     (int(target_id), row, item.id))
+    await _compact_rows(ctx, old_parent)
+    await ctx.reload()
+    await ctx.log("menu.move", str(item.id))
+    ctx.notice = "✅ Перенесено"
+    return f"a:item:{target_id}"
 
 
 # ---------- расстановка ----------

@@ -854,3 +854,34 @@ def test_admin_screens_simple(tmp_path):
         await h.click(OWNER, "a:stats")
         assert "Популярные за месяц" in h.screen(OWNER).text
     run(scenario())
+
+
+def test_move_buttons_and_clean_test_data(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        shop_id = await make_shop(h)
+        for kind in ("search", "favorites"):
+            item = next(i for i in h.app.catalog.menu.values() if i.kind == kind)
+            await h.click(OWNER, f"a:imove:{item.id}")
+            await h.press(OWNER, "Ещё")
+        await h.send(USER, "/start")
+        top = [label for row in h.labels(USER) for label in row]
+        assert "🔍 Поиск" not in top and "⭐ Избранное" not in top
+        await h.press(USER, "Ещё")
+        inside = [label for row in h.labels(USER) for label in row]
+        assert "🔍 Поиск" in inside and "⭐ Избранное" in inside
+        await h.press(USER, "Поиск")
+        await h.send(USER, "gift")
+        assert h.labels(USER)[0] == ["Gift Shop"], "поиск работает из подменю"
+
+        await h.send(USER, f"/start shop_{shop_id}")
+        await h.app.flush()
+        assert await h.app.db.fetchval("SELECT COUNT(*) FROM events") > 0
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "a:stats")
+        await h.press(OWNER, "Очистить тестовые данные")
+        await h.press(OWNER, "Статистику просмотров")
+        await h.press(OWNER, "Да, удалить")
+        assert await h.app.db.fetchval("SELECT COUNT(*) FROM events") == 0
+        assert len(h.app.catalog.shops) == 1, "магазины на месте"
+    run(scenario())

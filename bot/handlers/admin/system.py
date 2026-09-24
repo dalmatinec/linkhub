@@ -172,7 +172,55 @@ async def view_stats(ctx: Ctx) -> ViewResult:
         f"Разных людей за неделю: <b>{uniq}</b>\n\n"
         f"🏆 <b>Популярные за месяц</b>\n{top_lines}"
     )
-    return html, [back_btn("a:home")]
+    rows: Rows = [back_btn("a:home")]
+    if _owner(ctx):
+        rows.insert(0, [b("🧹 Очистить тестовые данные", "a:clean:stats")])
+    return html, rows
+
+
+# ---------- очистка тестовых данных ----------
+CLEAN = {
+    "apps": ("📝 Все заявки", "DELETE FROM applications"),
+    "views": ("👁 Статистику просмотров", "DELETE FROM events"),
+    "reports": ("🚩 Все жалобы", "DELETE FROM reports"),
+}
+
+
+CLEAN_BACK = {"stats": "a:stats", "appls": "a:appls:new:0"}
+
+
+def _owner(ctx: Ctx) -> bool:
+    return ctx.user_id in ctx.app.config.owner_ids
+
+
+@view("clean")
+async def view_clean(ctx: Ctx, back: str = "stats") -> ViewResult:
+    if not _owner(ctx):
+        return "Это может только владелец.", [back_btn("a:home")]
+    rows: Rows = [[b(title, f"a:cleanok:{key}:{back}")] for key, (title, _) in CLEAN.items()]
+    rows.append(back_btn(CLEAN_BACK.get(back, "a:home")))
+    return ("🧹 <b>Очистка</b>\nЧто удалить? Магазины, меню, тексты, картинки и пользователи останутся. "
+            "Перед очисткой бот пришлёт бэкап."), rows
+
+
+@view("cleanok")
+async def view_clean_confirm(ctx: Ctx, key: str, back: str) -> ViewResult:
+    title = CLEAN[key][0]
+    return (f"Точно удалить: {title}? Вернуть можно только из бэкапа.",
+            [[b("🗑 Да, удалить", f"x:clean:{key}:{back}", "danger"),
+              b("✖️ Отмена", CLEAN_BACK.get(back, "a:home"))]])
+
+
+@action("clean")
+async def act_clean(ctx: Ctx, key: str, back: str):
+    if not _owner(ctx) or key not in CLEAN:
+        return "a:home"
+    await ctx.app.flush()
+    await send_backup(ctx.app, ctx.chat_id, caption="💾 Бэкап перед очисткой")
+    await ctx.app.db.execute(CLEAN[key][1])
+    await ctx.log("clean", CLEAN[key][0])
+    ctx.notice = f"✅ Удалено: {CLEAN[key][0]}"
+    return CLEAN_BACK.get(back, "a:home")
 
 
 # ---------- бэкап ----------

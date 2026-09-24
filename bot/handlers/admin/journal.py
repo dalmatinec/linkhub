@@ -7,7 +7,7 @@ ACTION_NAMES = {
     "shop.create": "создал магазин", "shop.delete": "удалил магазин", "shop.publish": "опубликовал магазин",
     "shop.hide": "скрыл магазин", "shop.tag_on": "поставил метку", "shop.tag_off": "снял метку",
     "shop.tag_expired": "срок метки истёк", "shop.tag_expiry": "изменил срок метки", "shop.contacts": "изменил контакты",
-    "shop.verified": "переключил отметку Проверенный", "shop.categories": "изменил категории", "shop.keywords": "изменил слова для поиска", "menu.create": "добавил кнопку меню", "menu.delete": "удалил кнопку меню",
+    "shop.verified": "переключил отметку Проверенный", "shop.categories": "изменил категории", "shop.keywords": "изменил слова для поиска", "menu.create": "добавил кнопку меню", "menu.move": "перенёс кнопку меню", "clean": "очистил", "menu.delete": "удалил кнопку меню",
     "menu.toggle": "скрыл/показал кнопку меню", "city.create": "добавил города", "city.delete": "удалил город",
     "tag.create": "создал метку", "tag.delete": "удалил метку", "user.ban": "забанил", "user.unban": "разбанил",
     "admin.add": "добавил админа", "admin.remove": "снял админа", "admin.perms": "изменил права админа",
