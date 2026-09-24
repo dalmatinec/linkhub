@@ -227,14 +227,10 @@ async def act_clean(ctx: Ctx, key: str, back: str):
 @view("bak", "backup")
 async def view_backup(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
-    html = ("💾 <b>Бэкап</b>\n\n"
-            "Архив = база (все тексты, кнопки, магазины, пользователи) + все медиафайлы.\n"
-            f"Автоматически каждый день в {cat.setting('backup_hour')}:00 "
-            f"(UTC+{cat.setting('tz_offset')}). Последний: {cat.setting('last_backup_day', 'ещё не было')}.\n"
-            f"Куда: {'в канал логов' if ctx.app.log_chat else 'владельцам в личку (подключите канал в ⚙️ Настройках)'}.\n\n"
-            "<b>Переезд на новый токен:</b> меняете BOT_TOKEN в .env и перезапускаете. Всё остаётся на месте, медиа "
-            "перезальются сами.\n"
-            "<b>Переезд на новый сервер:</b> копируете папку data целиком, либо восстанавливаете из архива.")
+    html = ("💾 <b>Бэкап</b>: база и все картинки в одном архиве\n\n"
+            f"Каждый день в {cat.setting('backup_hour')}:00, последний: {cat.setting('last_backup_day', 'ещё не было')}\n"
+            f"Куда: {'канал логов' if ctx.app.log_chat else 'вам в личку (лучше подключить канал логов в Настройках)'}\n"
+            "На сервере хранятся 3 последних, старые удаляются сами.")
     rows = [[b("💾 Сделать бэкап сейчас", "x:bakgo", "success")],
             [b("♻️ Восстановить из архива", "x:bakrest", "danger")],
             back_btn("a:cfg")]
@@ -244,9 +240,9 @@ async def view_backup(ctx: Ctx) -> ViewResult:
 @action("bakgo", "backup")
 async def act_backup_now(ctx: Ctx):
     await ctx.toast("Собираю архив…")
-    note = await send_backup(ctx.app, ctx.chat_id, "💾 Бэкап")
+    # есть канал логов: бэкап уходит туда, как ночной; нет канала: сюда в чат
+    ctx.notice = await send_backup(ctx.app, None if ctx.app.log_chat else ctx.chat_id, "💾 Бэкап")
     await ctx.log("backup.create")
-    ctx.notice = "✅ Бэкап отправлен ниже." + note
     return "a:bak"
 
 

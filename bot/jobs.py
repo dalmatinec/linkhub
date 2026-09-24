@@ -98,16 +98,32 @@ async def daily_backup(app: App) -> None:
 
 
 async def send_backup(app: App, chat_id: int | None, caption: str) -> str:
-    """Делает бэкап и отправляет его. chat_id=None — в канал из настроек или владельцам."""
+    """Делает бэкап и отправляет его. chat_id=None: в канал логов, а без канала владельцам.
+    Возвращает строку для админа: куда ушёл архив или что пошло не так."""
     path = await make_backup(app)
     note = ""
     if path.stat().st_size > SEND_LIMIT:
         path = await make_backup(app, with_media=False)
         note = "\n⚠️ Медиа не поместились в лимит Telegram (50 МБ), поэтому отправлена только база. Полный архив лежит на сервере в data/backups."
+    size = f"{path.stat().st_size / 1048576:.1f} МБ"
     targets = [chat_id] if chat_id else ([app.log_chat] if app.log_chat else sorted(app.config.owner_ids))
+    sent, errors = [], []
     for target in targets:
         try:
-            await app.bot.send_document(target, FSInputFile(path), caption=caption + note, disable_notification=True)
+            await app.bot.send_document(target, FSInputFile(path, filename=path.name),
+                                        caption=f"{caption} ({size})" + note, disable_notification=True)
+            sent.append(target)
         except TelegramAPIError as e:
             log.warning("Не удалось отправить бэкап в %s: %s", target, e)
-    return note
+            errors.append(f"{target}: {e}")
+    if errors and not chat_id:  # в канал не ушло: шлём владельцам, чтобы бэкап не потерялся
+        for owner in sorted(app.config.owner_ids):
+            try:
+                await app.bot.send_document(owner, FSInputFile(path, filename=path.name),
+                                            caption=f"{caption} ({size})\n⚠️ В канал логов не отправился: "
+                                                    f"{escape(errors[0])[:300]}", disable_notification=True)
+            except TelegramAPIError:
+                pass
+    where = "в канал логов" if sent and not chat_id and app.log_chat else "сюда в чат"
+    result = f"✅ Бэкап {size} отправлен {where}." if sent else "⚠️ Бэкап не отправился: " + escape("; ".join(errors))[:300]
+    return result + note

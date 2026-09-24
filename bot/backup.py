@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .app import App
 
-KEEP_LOCAL = 7
+KEEP_LOCAL = 3  # на сервере лежат только 3 последних архива, старые удаляются сами
 
 
 def _zip(db_copy: Path, media_dir: Path, target: Path, with_media: bool) -> None:

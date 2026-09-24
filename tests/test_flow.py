@@ -885,3 +885,21 @@ def test_move_buttons_and_clean_test_data(tmp_path):
         assert await h.app.db.fetchval("SELECT COUNT(*) FROM events") == 0
         assert len(h.app.catalog.shops) == 1, "магазины на месте"
     run(scenario())
+
+
+def test_backup_goes_to_log_channel(tmp_path):
+    async def scenario():
+        from aiogram.methods import SendDocument
+        h = await Harness(tmp_path).start()
+        await h.send(OWNER, "/admin")
+        await h.click(OWNER, "x:bakgo")
+        assert [c.chat_id for c in h.tg.calls if isinstance(c, SendDocument)] == [OWNER], "без канала в личку"
+        await h.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('log_chat_id', '-100500')")
+        await h.app.catalog.reload()
+        await h.click(OWNER, "x:bakgo")
+        assert [c.chat_id for c in h.tg.calls if isinstance(c, SendDocument)][-1] == -100500, "с каналом в канал"
+        assert "в канал логов" in h.screen(OWNER).text
+        for _ in range(4):
+            await h.click(OWNER, "x:bakgo")
+        assert len(list(h.app.config.backup_dir.glob("backup_*.zip"))) <= 3, "старые архивы удаляются"
+    run(scenario())
