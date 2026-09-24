@@ -9,7 +9,7 @@ from .db import Database
 
 SEED_PATH = Path(__file__).with_name("seed.json")
 LEGACY_PATH = Path(__file__).with_name("seed_legacy.json")  # прежние стандартные тексты
-TEXTS_REV = "texts_v3"  # поменяли стандартные тексты — увеличить номер, чтобы нетронутые обновились в базе
+TEXTS_REV = "texts_v4"  # поменяли стандартные тексты — увеличить номер, чтобы нетронутые обновились в базе
 
 
 async def apply_seed(db: Database) -> None:

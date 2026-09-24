@@ -716,15 +716,19 @@ def test_existing_install_gets_new_layout_and_texts(tmp_path):
         await db.execute("UPDATE menu_items SET parent_id = ?, row = 4 WHERE parent_id = ?", (root, more.id))
         await db.execute("DELETE FROM menu_items WHERE id = ?", (more.id,))
         await db.execute("UPDATE texts SET html = 'Здесь пока пусто.' WHERE key = 'empty'")
+        await db.execute("UPDATE texts SET html = ? WHERE key = 'search_prompt'",
+                         ("🔍 Напишите, что ищете. Можно всё сразу: товар, город и цену.\nНапример: "
+                          "<i>vpn алматы до 3000</i> или <i>подарки астана</i>",))
         await db.execute("UPDATE texts SET html = 'Мой текст — с тире' WHERE key = 'flood'")
         await db.execute("UPDATE menu_items SET html = 'Моё приветствие про Cruise' WHERE id = ?", (root,))
-        await db.execute("DELETE FROM settings WHERE key IN ('layout_v2', 'texts_v3')")
+        await db.execute("DELETE FROM settings WHERE key IN ('layout_v2', 'texts_v4')")
         await h.stop()
 
         h2 = await Harness(tmp_path).start()
         cat = h2.app.catalog
         assert cat.text("empty").html == "Здесь пока нет магазинов. Загляните позже.", "стандартный текст обновлён"
         assert cat.text("flood").html == "Мой текст — с тире", "свой текст не тронут"
+        assert "vpn" not in cat.text("search_prompt").html.casefold(), "подсказка поиска без примеров товаров"
         assert cat.menu[cat.root_id].html == "Моё приветствие про Cruise"
         await h2.send(USER, "/start")
         assert h2.labels(USER)[1] == ["Алматы", "Астана"] and h2.labels(USER)[-1] == ["☰ Ещё"]
