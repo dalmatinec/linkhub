@@ -894,7 +894,15 @@ def test_backup_stays_on_server(tmp_path):
         await h.send(OWNER, "/admin")
         for _ in range(5):
             await h.click(OWNER, "x:bakgo")
-        assert "Лежит на сервере" in h.screen(OWNER).text
-        assert not [c for c in h.tg.calls if isinstance(c, SendDocument)], "файл в Telegram не шлём"
+        screen = lambda: [m for m in h.tg.chat(OWNER) if m.kind == "text"][-1].text  # noqa: E731
+        assert "На сервере" in screen() and "владельцу в личку" in screen()
+        docs = [c for c in h.tg.calls if isinstance(c, SendDocument)]
+        assert docs and all(c.chat_id == OWNER for c in docs), "без канала копия владельцу"
+        assert h.tg.documents and h.tg.documents[-1][:2] == b"PK", "архив ушёл целиком из памяти"
+        await h.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('log_chat_id', '-100500')")
+        await h.app.catalog.reload()
+        await h.click(OWNER, "x:bakgo")
+        assert [c for c in h.tg.calls if isinstance(c, SendDocument)][-1].chat_id == -100500, "с каналом в канал"
+        assert "в канал логов" in screen()
         assert len(list(h.app.config.backup_dir.glob("backup_*.zip"))) <= 3, "хранятся 3 последних"
     run(scenario())

@@ -229,8 +229,9 @@ async def view_backup(ctx: Ctx) -> ViewResult:
     cat = ctx.app.catalog
     html = ("💾 <b>Бэкап</b>: база и все картинки в одном архиве\n\n"
             f"Каждый день в {cat.setting('backup_hour')}:00, последний: {cat.setting('last_backup_day', 'ещё не было')}\n"
-            f"Лежат на сервере в <code>{escape(str(ctx.app.config.backup_dir.resolve()))}</code>, "
-            "хранятся 3 последних, старые удаляются сами. Забирать через WinSCP.")
+            f"Копия уходит {'в канал логов' if ctx.app.log_chat else 'владельцу в личку'}.\n"
+            f"На сервере: <code>{escape(str(ctx.app.config.backup_dir.resolve()))}</code>, "
+            "хранятся 3 последних, старые удаляются сами.")
     rows = [[b("💾 Сделать бэкап сейчас", "x:bakgo", "success")],
             [b("♻️ Восстановить из архива", "x:bakrest", "danger")],
             back_btn("a:cfg")]

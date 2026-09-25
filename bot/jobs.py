@@ -5,6 +5,8 @@ import logging
 from datetime import datetime, timedelta, timezone
 from html import escape
 
+from aiogram.exceptions import TelegramAPIError
+from aiogram.types import BufferedInputFile
 
 from .app import App
 from .backup import make_backup
@@ -17,6 +19,7 @@ FLUSH_EVERY = 30
 MAINTENANCE_EVERY = 300
 EVENTS_KEEP_DAYS = 180
 LOG_KEEP_DAYS = 90  # журнал действий админов
+SEND_LIMIT = 49 * 1024 * 1024  # бот может отправить файл до 50 МБ
 
 
 async def run_jobs(app: App, guard: GuardMiddleware) -> None:
@@ -95,11 +98,26 @@ async def daily_backup(app: App) -> None:
 
 
 async def send_backup(app: App, caption: str) -> str:
-    """Делает бэкап на сервере (там хранятся 3 последних) и пишет об этом в канал логов.
-    Сам файл в Telegram не шлём: забирать его с сервера. Возвращает строку для админа."""
+    """Делает бэкап на сервере (там хранятся 3 последних) и шлёт копию в канал логов, а без канала владельцам.
+    Файл отправляется целиком из памяти, а не кусками с диска. Возвращает строку для админа."""
     path = await make_backup(app)
     size = f"{path.stat().st_size / 1048576:.1f} МБ"
-    folder = path.parent.resolve()
-    text = f"{caption}: <code>{escape(path.name)}</code> ({size})\nЛежит на сервере в <code>{escape(str(folder))}</code>"
-    await app.log_event(text)
-    return f"✅ Бэкап готов, {size}.\nЛежит на сервере в <code>{escape(str(folder))}</code>"
+    folder = escape(str(path.parent.resolve()))
+    on_server = f"На сервере: <code>{folder}</code>"
+    if path.stat().st_size > SEND_LIMIT:
+        await app.log_event(f"{caption}: {escape(path.name)} ({size}), в Telegram не влезает (лимит 50 МБ).\n{on_server}")
+        return f"✅ Бэкап готов, {size}. В Telegram не влезает, забирайте с сервера.\n{on_server}"
+    data = await asyncio.to_thread(path.read_bytes)
+    targets = [app.log_chat] if app.log_chat else sorted(app.config.owner_ids)
+    errors = []
+    for target in targets:
+        try:
+            await app.bot.send_document(target, BufferedInputFile(data, filename=path.name),
+                                        caption=f"{caption} ({size})", disable_notification=True)
+        except TelegramAPIError as e:
+            log.warning("Не удалось отправить бэкап в %s: %s", target, e)
+            errors.append(str(e))
+    where = "в канал логов" if app.log_chat else "владельцу в личку"
+    if errors:
+        return f"⚠️ Бэкап готов ({size}), но в Telegram не отправился: {escape(errors[0])[:200]}\n{on_server}"
+    return f"✅ Бэкап готов, {size}, отправлен {where}.\n{on_server}"
