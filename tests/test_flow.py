@@ -922,3 +922,23 @@ def test_admin_shop_search_any_alphabet(tmp_path):
             await h.send(OWNER, query)
             assert f"🏪 <b>{name}</b>" in h.screen(OWNER).text, f"{query} → сразу карточка {name}"
     run(scenario())
+
+
+def test_user_search_by_name_any_alphabet(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        for name in ("Cheshire", "Кот Бегемот"):
+            await make_shop(h, name)  # уже опубликован
+        from bot import search
+        names = lambda q: [s.label for s in search.run(h.app.catalog, q)[0]]  # noqa: E731
+        assert names("чешир") == ["Cheshire"]
+        assert names("CHESHIRE") == ["Cheshire"]
+        assert names("чешир алматы") == ["Cheshire"], "название вместе с городом"
+        assert names("чешир астана") == [], "город всё равно фильтрует"
+        assert names("kot begemot") == ["Кот Бегемот"]
+        assert names("бегемот") == ["Кот Бегемот"]
+        await h.send(USER, "/start")
+        await h.press(USER, "Поиск")
+        await h.send(USER, "Чешир")
+        assert h.labels(USER)[0] == ["Cheshire"]
+    run(scenario())

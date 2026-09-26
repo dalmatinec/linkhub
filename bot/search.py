@@ -189,6 +189,36 @@ def _mentions(key: str, words: list[str]) -> bool:
     return False
 
 
+_CYR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i",
+        "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+        "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e",
+        "ю": "yu", "я": "ya"}
+
+
+def latin(text: str) -> str:
+    """Название латиницей и без регистра, чтобы «Чешир» и «Cheshire» сравнивались между собой."""
+    s = "".join(_CYR.get(ch, ch) for ch in text.casefold())
+    s = s.replace("ch", "§").replace("ck", "k").replace("c", "k").replace("§", "ch")
+    for a, b_ in (("kh", "h"), ("ph", "f"), ("w", "v"), ("q", "k"), ("x", "ks"), ("j", "dzh")):
+        s = s.replace(a, b_)
+    return "".join(ch for ch in s if ch.isalnum())
+
+
+def consonants(text: str) -> str:
+    """Без гласных: спасает разницу в написании (cheshire ↔ чешир)."""
+    s = latin(text)
+    return s[:1] + "".join(ch for ch in s[1:] if ch not in "aeiouy")
+
+
+def name_hit(label: str, words: list[str]) -> bool:
+    """Запрос похож на название магазина, даже если написан другим алфавитом: «чешир» ↔ Cheshire."""
+    q = latin("".join(words))
+    if len(q) < 3:
+        return False
+    qc = consonants("".join(words))
+    return q in latin(label) or (len(qc) >= 3 and qc in consonants(label))
+
+
 def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
     q = parse(cat, text)
     if not q.words and not q.has_filters:
@@ -212,10 +242,12 @@ def run(cat: Catalog, text: str, limit: int = 100) -> tuple[list[Shop], Query]:
                 continue
             if q.price_min is not None and max(prices) < q.price_min:
                 continue
-        if not all(_mentions(key, group) for group in groups):
+        by_name = bool(q.words) and name_hit(shop.label, q.words)
+        if not by_name and not all(_mentions(key, group) for group in groups):
             continue
         name = _names(shop.label)
         score = sum(2 for group in stems if any(s in name for s in group))  # совпадение в названии — выше
+        score += 3 if by_name else 0
         scored.append((score, shop))
     scored.sort(key=lambda x: (-x[0], cat.shop_rank(x[1])))
     return [s for _, s in scored[:limit]], q

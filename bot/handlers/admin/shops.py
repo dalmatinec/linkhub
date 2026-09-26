@@ -7,6 +7,7 @@ from aiogram.types import Message
 
 from ...catalog import Shop, now
 from ...richtext import normalize_url, parse_contacts, parse_label
+from ...search import consonants, latin
 from ...ui import button, grid, paginate
 from ..user import screen_card
 from .core import (
@@ -83,27 +84,6 @@ async def in_shop_new(ctx: Ctx, message: Message):
         ctx.notice = "✅ Магазин создан <b>скрытым</b>. Сначала отметьте, какие товары в нём есть."
         return f"a:scats:{shop_id}"
     return f"a:shop:{shop_id}"
-
-
-_CYR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i",
-        "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
-        "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e",
-        "ю": "yu", "я": "ya"}
-
-
-def latin(text: str) -> str:
-    """Название латиницей и без регистра, чтобы «Чешир» и «Cheshire» сравнивались между собой."""
-    s = "".join(_CYR.get(ch, ch) for ch in text.casefold())
-    s = s.replace("ch", "§").replace("ck", "k").replace("c", "k").replace("§", "ch")
-    for a, b_ in (("kh", "h"), ("ph", "f"), ("w", "v"), ("q", "k"), ("x", "ks"), ("j", "dzh")):
-        s = s.replace(a, b_)
-    return "".join(ch for ch in s if ch.isalnum())
-
-
-def consonants(text: str) -> str:
-    """Без гласных: спасает разницу в написании (cheshire ↔ чешир)."""
-    s = latin(text)
-    return s[:1] + "".join(ch for ch in s[1:] if ch not in "aeiouy")
 
 
 def find_shops(shops: list[Shop], query: str) -> list[Shop]:
