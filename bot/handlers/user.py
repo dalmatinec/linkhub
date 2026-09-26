@@ -182,7 +182,7 @@ def cities_line(app: App, tr: Tr, shop: Shop) -> str:
     cat = app.catalog
     active = [c for c in cat.cities.values() if c.is_active]
     mine = [c for c in active if c.id in shop.cities]
-    if not mine or not cat.setting("card_show_cities", 1):
+    if not mine:  # города в карточке показываются всегда
         return ""
     if len(mine) == len(active) and len(active) > 1:
         return tr.text("card_cities_all")

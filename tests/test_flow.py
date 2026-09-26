@@ -906,3 +906,19 @@ def test_backup_stays_on_server(tmp_path):
         assert "в канал логов" in screen()
         assert len(list(h.app.config.backup_dir.glob("backup_*.zip"))) <= 3, "хранятся 3 последних"
     run(scenario())
+
+
+def test_admin_shop_search_any_alphabet(tmp_path):
+    async def scenario():
+        h = await Harness(tmp_path).start()
+        await make_shop(h, "Cheshire")
+        await make_shop(h, "Кот Бегемот")
+        await make_shop(h, "Star Market")
+        await h.click(OWNER, "a:shops:0")
+        assert h.find(OWNER, "Найти магазин") and all("Города в карточке" not in l for r in h.labels(OWNER) for l in r)
+        for query, name in (("чешир", "Cheshire"), ("CHESHIRE", "Cheshire"), ("kot begemot", "Кот Бегемот"),
+                            ("бегемот", "Кот Бегемот"), ("стар маркет", "Star Market")):
+            await h.click(OWNER, "x:shopfind")
+            await h.send(OWNER, query)
+            assert f"🏪 <b>{name}</b>" in h.screen(OWNER).text, f"{query} → сразу карточка {name}"
+    run(scenario())

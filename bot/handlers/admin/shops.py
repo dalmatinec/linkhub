@@ -45,20 +45,10 @@ async def view_shops(ctx: Ctx, page: str = "0") -> ViewResult:
     if p < pages - 1:
         nav.append(b("▶️", f"a:shops:{p + 1}"))
     rows.append(nav)
-    rows.append([b("➕ Добавить", "x:shopnew", "success"), b("🔍 Найти", "x:shopfind")])
-    show_cities = ctx.app.catalog.setting("card_show_cities", 1)
-    rows.append([b(f"🏙 Города в карточке: {'показывать' if show_cities else 'не показывать'}", "x:cardcity")])
+    rows.append([b("🔍 Найти магазин", "x:shopfind", "primary"), b("➕ Добавить", "x:shopnew", "success")])
     rows.append(back_btn("a:home"))
     html = f"🏪 <b>Магазины</b>: {len(shops)}\n🙈 значит скрыт, пользователи его не видят"
     return html, rows
-
-
-@action("cardcity", P)
-async def act_card_cities_toggle(ctx: Ctx):
-    value = 0 if ctx.app.catalog.setting("card_show_cities", 1) else 1
-    await ctx.app.db.execute("INSERT OR REPLACE INTO settings(key, value) VALUES ('card_show_cities', ?)", (str(value),))
-    await ctx.reload()
-    return "a:shops:0"
 
 
 @action("shopnew", P)
@@ -95,18 +85,53 @@ async def in_shop_new(ctx: Ctx, message: Message):
     return f"a:shop:{shop_id}"
 
 
+_CYR = {"а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i",
+        "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u",
+        "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e",
+        "ю": "yu", "я": "ya"}
+
+
+def latin(text: str) -> str:
+    """Название латиницей и без регистра, чтобы «Чешир» и «Cheshire» сравнивались между собой."""
+    s = "".join(_CYR.get(ch, ch) for ch in text.casefold())
+    s = s.replace("ch", "§").replace("ck", "k").replace("c", "k").replace("§", "ch")
+    for a, b_ in (("kh", "h"), ("ph", "f"), ("w", "v"), ("q", "k"), ("x", "ks"), ("j", "dzh")):
+        s = s.replace(a, b_)
+    return "".join(ch for ch in s if ch.isalnum())
+
+
+def consonants(text: str) -> str:
+    """Без гласных: спасает разницу в написании (cheshire ↔ чешир)."""
+    s = latin(text)
+    return s[:1] + "".join(ch for ch in s[1:] if ch not in "aeiouy")
+
+
+def find_shops(shops: list[Shop], query: str) -> list[Shop]:
+    q, qc = latin(query), consonants(query)
+    if not q:
+        return []
+    exact = [s for s in shops if latin(s.label) == q]
+    by_name = [s for s in shops if q in latin(s.label) or (len(qc) >= 3 and qc in consonants(s.label))]
+    by_text = [s for s in shops if query.casefold() in s.search_key]
+    return list({s.id: s for s in exact + by_name + by_text}.values())
+
+
 @action("shopfind", P)
 async def act_shop_find(ctx: Ctx):
-    return await ctx.ask("shopfind", "Отправьте часть названия или описания магазина.", "a:shops:0")
+    return await ctx.ask("shopfind", "🔍 Напишите название магазина. Можно по-русски или латиницей, "
+                                     "регистр не важен.", "a:shops:0")
 
 
 @on_input("shopfind", P)
-async def in_shop_find(ctx: Ctx, message: Message) -> ViewResult:
-    q = (message.text or "").casefold().strip()
+async def in_shop_find(ctx: Ctx, message: Message) -> ViewResult | str:
+    q = (message.text or "").strip()
     if not q:
         raise InputError("Пустой запрос.")
-    found = [s for s in sorted_shops(ctx) if q in s.search_key][:40]
-    rows = grid([b(shop_title(s), f"a:shop:{s.id}") for s in found], 2)
+    found = find_shops(sorted_shops(ctx), q)
+    if len(found) == 1 or (found and latin(found[0].label) == latin(q)):
+        return f"a:shop:{found[0].id}"  # нашёлся один или точное совпадение: сразу в карточку
+    rows = grid([b(shop_title(s), f"a:shop:{s.id}") for s in found[:40]], 2)
+    rows.append([b("🔍 Искать ещё", "x:shopfind")])
     rows.append(back_btn("a:shops:0"))
     return f"🔍 По запросу <b>{escape(q)}</b> найдено: {len(found)}", rows
 
