@@ -366,6 +366,7 @@ NEW_COLUMNS = {
     "users": {
         "birthday": "TEXT NOT NULL DEFAULT ''",         # 'MM-DD'
         "bday_year": "INTEGER NOT NULL DEFAULT 0",      # в каком году уже поздравили
+        "first_seen": "REAL NOT NULL DEFAULT 0",        # когда впервые увидели в чате (вход или первое сообщение)
     },
     "history": {
         "reply_user_id": "INTEGER NOT NULL DEFAULT 0",
@@ -436,6 +437,10 @@ async def _migrate() -> None:
         for name, ddl in columns.items():
             if name not in have:
                 await conn().execute(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+                if (table, name) == ("users", "first_seen"):  # старым людям: самое раннее сообщение из истории
+                    await conn().execute(
+                        "UPDATE users SET first_seen = COALESCE((SELECT MIN(h.ts) FROM history h WHERE "
+                        "h.chat_id = users.chat_id AND h.user_id = users.user_id), 0)")
 
 
 async def close() -> None:
@@ -548,12 +553,12 @@ async def migrate_chat(old_id: int, new_id: int) -> None:
 
 async def touch_user(chat_id: int, user_id: int, name: str, username: str) -> aiosqlite.Row:
     await conn().execute(
-        """INSERT INTO users (chat_id, user_id, name, username, msg_count, last_seen)
-           VALUES (?, ?, ?, ?, 1, ?)
+        """INSERT INTO users (chat_id, user_id, name, username, msg_count, last_seen, first_seen)
+           VALUES (?, ?, ?, ?, 1, ?, ?)
            ON CONFLICT(chat_id, user_id) DO UPDATE SET
                name = excluded.name, username = excluded.username,
                msg_count = msg_count + 1, last_seen = excluded.last_seen""",
-        (chat_id, user_id, name, username, time.time()))
+        (chat_id, user_id, name, username, time.time(), time.time()))
     await conn().commit()
     return await get_user(chat_id, user_id)
 
@@ -561,9 +566,10 @@ async def touch_user(chat_id: int, user_id: int, name: str, username: str) -> ai
 async def add_user_silently(chat_id: int, user_id: int, name: str, username: str) -> None:
     """Новичок вступил: запоминаем, но сообщений у него ещё нет."""
     await conn().execute(
-        """INSERT INTO users (chat_id, user_id, name, username, last_seen) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT(chat_id, user_id) DO UPDATE SET name = excluded.name, username = excluded.username""",
-        (chat_id, user_id, name, username, time.time()))
+        """INSERT INTO users (chat_id, user_id, name, username, last_seen, first_seen) VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT(chat_id, user_id) DO UPDATE SET name = excluded.name, username = excluded.username,
+               first_seen = CASE WHEN first_seen = 0 THEN excluded.first_seen ELSE first_seen END""",
+        (chat_id, user_id, name, username, time.time(), time.time()))
     await conn().commit()
 
 

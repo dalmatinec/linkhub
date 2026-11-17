@@ -67,28 +67,56 @@ async def chat_ranks_lines(user_id: int) -> list[str]:
                                           f"{catalog.title_for(r['level'])}" for r in rows]
 
 
+def _num(n: int) -> str:
+    return f"{n:,}".replace(",", " ")
+
+
+def _plural(n: int, one: str, few: str, many: str) -> str:
+    if n % 10 == 1 and n % 100 != 11:
+        return one
+    if 2 <= n % 10 <= 4 and not 12 <= n % 100 <= 14:
+        return few
+    return many
+
+
 async def rank_card(chat_id: int, user: User) -> str:
-    """Для чата: ранг в этом чате, общий уровень, монеты и питомец."""
+    """/me в чате: компактная карточка. Кто это, активность, ранг, репутация, монеты, питомец и
+    модерация (предупреждения, текущий мут или бан, история с причинами в свёрнутой цитате)."""
+    import datetime
+    from bot import config, db
+    from bot.services import guardlink
     name = name_of(user)
     r = await store.chat_rank(chat_id, user.id, name)
     w = await store.wallet(user.id, name)
     place, total = await store.chat_rank_place(chat_id, user.id)
     lo, hi = catalog.xp_for(r["level"]), catalog.xp_for(r["level"] + 1)
     pet = await store.pet(user.id)
-    from bot.services import guardlink
-    warns = await guardlink.warns_line(chat_id, user.id)   # от модератора: «⚠️ предупреждения 2/3»
-    return (f"👤 {mention(user.id, name)}\n\n"
-            f"🏅 Ранг в этом чате: <b>{r['level']}</b> · {catalog.title_for(r['level'])}"
-            + (f" · {place} место из {total}" if r["xp"] else "") + "\n"
-            f"📈 {bar(r['xp'] - lo, hi - lo)} {r['xp'] - lo}/{hi - lo}\n"
-            f"🌍 Общий уровень: <b>{w['level']}</b> · {catalog.title_for(w['level'])} "
-            f"(во всех чатах, #{await store.global_place(user.id)})\n"
-            f"🪙 Монеты: <b>{w['coins']}</b>\n"
-            f"🐾 Питомец: {pet_title(pet) if pet else 'нет'}"
-            + (f"\n{warns}" if warns else ""))
+    row = await db.get_user(chat_id, user.id)
+    chat = await db.get_chat(chat_id)
+    msgs = row["msg_count"] if row else 0
+    first = row["first_seen"] if row and "first_seen" in row.keys() else 0
 
-
-
+    head = f"👤 {mention(user.id, name)}" + (f" · @{esc(user.username)}" if user.username else "")
+    lines = [head, f"🆔 <code>{user.id}</code>", ""]
+    lines.append(f"🏅 Ранг <b>{r['level']}</b> · {catalog.title_for(r['level'])}"
+                 + (f" · {place} из {total}" if r["xp"] else ""))
+    lines.append(f"📈 {bar(r['xp'] - lo, hi - lo)} {r['xp'] - lo}/{hi - lo}")
+    activity = f"💬 {_num(msgs)} {_plural(msgs, 'сообщение', 'сообщения', 'сообщений')}"
+    if first:
+        activity += " · 📅 с " + datetime.datetime.fromtimestamp(first, config.TZ).strftime("%d.%m.%Y")
+    lines.append(activity)
+    if not chat or chat["rep"]:
+        rep = await db.rep_get(chat_id, user.id)
+        lines.append(f"💜 Репутация <b>{rep}</b>" + (f" · {await db.rep_place(chat_id, user.id)} место" if rep else ""))
+    lines.append(f"🪙 <b>{_num(w['coins'])}</b> · 🌍 ур. {w['level']} (#{await store.global_place(user.id)})")
+    if pet:
+        lines.append(f"🐾 {pet_title(pet)}")
+    status, history = await guardlink.card_lines(chat_id, user.id)
+    lines += ["", status]
+    text = "\n".join(lines)
+    if history:
+        text += "\n<blockquote expandable>" + "\n".join(history) + "</blockquote>"
+    return text
 
 
 async def send_pet(bot: Bot, chat_id: int, user: User, bot_name: str, reply_to: Message | None = None,

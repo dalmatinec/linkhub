@@ -192,3 +192,19 @@ def test_plain_nick():
     assert guardlink.plain_nick("𝓑𝓪𝓴𝓼𝓲 👑") == "Baksi"
     assert guardlink.plain_nick("Ｖａｓｙａ_99") == "Vasya_99"
     assert guardlink.plain_nick("  Петя   Пупкин ") == "Петя Пупкин"
+
+
+def test_card_lines(tmp_path, monkeypatch):
+    async def fn(c):
+        await db.ensure_chat(CHAT, "Тест")
+        assert await guardlink.card_lines(CHAT, 5) == ("🛡 нарушений нет", [])
+        await c.post("/v1/events", headers=H, json=event("warn", warns=1, reason="флуд"))
+        await c.post("/v1/events", headers=H, json=event("ban", until=0, warns=1, reason="реклама"))
+        status, lines = await guardlink.card_lines(CHAT, 5)
+        assert status == "🛡 предупреждения 1/3 · бан навсегда"
+        assert "бан: реклама" in lines[0] and "предупреждение: флуд" in lines[1]
+        await c.post("/v1/events", headers=H, json=event("unban"))
+        await c.post("/v1/events", headers=H, json=event("unwarn", warns=0))
+        status, lines = await guardlink.card_lines(CHAT, 5)
+        assert status == "🛡 сейчас чисто" and len(lines) == 2
+    run(tmp_path, monkeypatch, fn)

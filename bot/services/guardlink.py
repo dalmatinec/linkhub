@@ -159,6 +159,56 @@ async def warns_line(chat_id: int, user_id: int) -> str:
     return f"⚠️ предупреждения {st['warns']}/{st['warn_limit']}"
 
 
+HISTORY_TYPES = ("warn", "mute", "ban", "kick")
+HISTORY_ICONS = {"warn": "⚠️ предупреждение", "mute": "🔇 мут", "ban": "⛔ бан", "kick": "👢 кик"}
+
+
+def _left(until: int) -> str:
+    """Срок наказания коротко: 'до 18:30', 'до 21.11', 'навсегда'."""
+    if until == -1 or until == 0:
+        return "навсегда"
+    import datetime
+    dt = datetime.datetime.fromtimestamp(until, config.TZ)
+    today = datetime.datetime.now(config.TZ).date()
+    return "до " + (dt.strftime("%H:%M") if dt.date() == today else dt.strftime("%d.%m %H:%M"))
+
+
+async def history(chat_id: int, user_id: int, limit: int = 5) -> list[dict]:
+    async with db.conn().execute(
+            "SELECT type, until, reason, ts FROM guard_events WHERE chat_id = ? AND user_id = ? AND type IN "
+            "('warn', 'mute', 'ban', 'kick') ORDER BY ts DESC, id DESC LIMIT ?", (chat_id, user_id, limit)) as cur:
+        return [dict(r) for r in await cur.fetchall()]
+
+
+async def card_lines(chat_id: int, user_id: int) -> tuple[str, list[str]]:
+    """Для /me: (строка состояния, история с причинами). Состояние: предупреждения и текущий мут или бан."""
+    from bot.textutil import esc
+    import datetime
+    st = await state(chat_id, user_id)
+    parts = []
+    if st and st["warns"] > 0:
+        parts.append(f"предупреждения {st['warns']}/{st['warn_limit']}")
+    if st and _active(st["banned_until"]):
+        parts.append(f"бан {_left(st['banned_until'])}")
+    elif st and _active(st["muted_until"]):
+        parts.append(f"мут {_left(st['muted_until'])}")
+    items = await history(chat_id, user_id)
+    lines = []
+    for h in items:
+        when = datetime.datetime.fromtimestamp(h["ts"], config.TZ).strftime("%d.%m")
+        line = f"{when} {HISTORY_ICONS[h['type']]}"
+        if h["reason"]:
+            line += f": {esc(h['reason'][:60])}"
+        lines.append(line)
+    if parts:
+        status = "🛡 " + " · ".join(parts)
+    elif items:
+        status = "🛡 сейчас чисто"
+    else:
+        status = "🛡 нарушений нет"
+    return status, lines
+
+
 async def day_counts(chat_id: int, since: float) -> dict[str, int]:
     async with db.conn().execute("SELECT type, COUNT(*) FROM guard_events WHERE chat_id = ? AND ts >= ? "
                                  "GROUP BY type", (chat_id, int(since))) as cur:
