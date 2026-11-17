@@ -24,6 +24,8 @@ async def main() -> None:
     await db.connect()
     from bot.economy import store as economy_store
     await economy_store.init()  # таблицы кошельков и питомцев
+    from bot.services import guardlink
+    await guardlink.init()      # события модератора: варны, муты, баны
     await db.rescale_old_spend()   # один раз: старые дни по старым ценам приводим к реальным
     limit = await db.kv_get("daily_limit")
     if limit:
@@ -50,6 +52,8 @@ async def main() -> None:
     await set_commands(bot)
     await emoji.load()
 
+    from bot.services import api as baxi_api
+    api_runner = await baxi_api.start(bot)  # внутренний API для модератора, только 127.0.0.1
     scheduler = asyncio.create_task(ads.run_scheduler(bot))
     planner = asyncio.create_task(daily.run_scheduler(bot))
     orders = asyncio.create_task(adorders.run_scheduler(bot))
@@ -60,6 +64,9 @@ async def main() -> None:
         scheduler.cancel()
         planner.cancel()
         orders.cancel()
+        if api_runner is not None:
+            await api_runner.cleanup()
+        await guardlink.close()
         await ai.close()
         await db.close()
         await bot.session.close()

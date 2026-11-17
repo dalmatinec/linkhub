@@ -34,7 +34,9 @@ async def targets(chat, me_id: int, exclude: int = 0) -> list[tuple[int, str]]:
         since = {"hour": 3600, "day": 86400, "week": 7 * 86400}.get(who)
         users = await db.users_since(chat_id, time.time() - since if since else 0, limit + 5)
         rows = [(u["user_id"], u["name"]) for u in users]
-    return [(uid, name) for uid, name in rows if uid not in (me_id, exclude)][:limit]
+    from bot.services import guardlink
+    blocked = await guardlink.blocked_ids(chat_id)   # замученных и забаненных модератором не зовём
+    return [(uid, name) for uid, name in rows if uid not in (me_id, exclude) and uid not in blocked][:limit]
 
 
 def batch_html(text_html: str, people: list[tuple[int, str]], style: str) -> str:

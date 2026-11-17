@@ -290,3 +290,15 @@ async def refund_expired() -> list[Duel]:
                 await store.add_coins(d.b, d.bet)
             gone.append(d)
     return gone
+
+
+async def cancel_duel_of(chat_id: int, user_id: int) -> Duel | None:
+    """Модерация убрала игрока (бан, мут, кик): игра в кости отменяется, принятые ставки возвращаются обоим."""
+    d = active_duel(chat_id)
+    if not d or user_id not in (d.a, d.b):
+        return None
+    DUELS.pop(chat_id, None)
+    if d.accepted:
+        await store.add_coins(d.a, d.bet)
+        await store.add_coins(d.b, d.bet)
+    return d

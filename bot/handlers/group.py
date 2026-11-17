@@ -29,6 +29,9 @@ async def on_message(message: Message, bot: Bot, chat_row=None, user_row=None) -
         return  # другой бот, канал или аноним-админ: молчим
     chat_id = message.chat.id
     memory.maybe_update(chat_id, user_row)
+    from bot.services import guardlink
+    if await guardlink.is_blocked(chat_id, user_row["user_id"]):
+        return  # замученному или забаненному модератором не отвечаем
 
     trig = await triggers.find(chat_id, message.text or "")
     if trig:

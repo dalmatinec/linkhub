@@ -136,7 +136,9 @@ async def build_results(bot: Bot, chat, manual: bool = False) -> dict | None:
 
     couple = await db.get_couple(chat_id, day)
     if couple is None:
-        picked = games.pick_couple([p.user_id for p in people if p.msgs > 0])
+        from bot.services import guardlink
+        blocked = await guardlink.blocked_ids(chat_id)   # кого убрала модерация, в пару не берём
+        picked = games.pick_couple([p.user_id for p in people if p.msgs > 0 and p.user_id not in blocked])
         if picked:
             await db.set_couple(chat_id, day, *picked)
             couple = await db.get_couple(chat_id, day)
@@ -165,6 +167,10 @@ async def build_results(bot: Bot, chat, manual: bool = False) -> dict | None:
     rude = rude_line(data)
     if rude:
         lines.append(rude)
+    from bot.services import guardlink
+    guard_line = guardlink.summary_line(await guardlink.day_counts(chat_id, since))
+    if guard_line:
+        lines.append(guard_line)
     quote = []
     if top_msg:
         quote = ["", f"🔥 <b>Сообщение дня</b> · {top_msg['total']} {plural(top_msg['total'], REACTS)}",
@@ -176,7 +182,7 @@ async def build_results(bot: Bot, chat, manual: bool = False) -> dict | None:
     lines += tail
 
     # подпись под альбомом: коротко, остальное на карточках (лимит подписи 1024 символа)
-    caption = "\n".join([title, *([rude] if rude else []), *quote, *tail])
+    caption = "\n".join([title, *([rude] if rude else []), *([guard_line] if guard_line else []), *quote, *tail])
     if len(caption) > 1000:
         caption = "\n".join([title, *tail])[:1000]
 
@@ -337,6 +343,8 @@ async def tick(bot: Bot) -> None:
     day = db.today()
     if now.hour == 4 and now.minute == 30:
         await db.prune_ai_log()   # разбивку расхода держим 40 дней
+        from bot.services import guardlink
+        await guardlink.cleanup()  # события модератора держим 30 дней
     for chat in await db.list_chats():
         ai.CURRENT_CHAT.set(chat)
         try:

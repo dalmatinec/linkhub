@@ -361,6 +361,7 @@ NEW_COLUMNS = {
         "free": "INTEGER NOT NULL DEFAULT 0",             # бесплатный тариф: без нейросети
         "trial_used": "INTEGER NOT NULL DEFAULT 0",       # пробный уже был
         "last_nudge": "REAL NOT NULL DEFAULT 0",          # когда напоминали про платную версию
+        "guard_tease": "INTEGER NOT NULL DEFAULT 0",      # подкалывать тех, кого наказал модератор
     },
     "users": {
         "birthday": "TEXT NOT NULL DEFAULT ''",         # 'MM-DD'
@@ -387,7 +388,8 @@ CHAT_FIELDS = {"bot_name", "aliases", "persona", "topic", "chance", "ai_share",
                "results_manual", "approved", "pending_since", "added_by", "rent_until", "rent_warned", "members",
                "shop", "added_name", "added_username", "quiz", "quiz_count", "quiet_from", "quiet_to",
                "quiet_until", "humor", "mat", "banned", "protect_admins", "call_text", "call_who", "call_style",
-               "call_max", "trial", "qday", "last_qday", "qday_queue", "revive", "last_revive", "free", "trial_used", "last_nudge"}
+               "call_max", "trial", "qday", "last_qday", "qday_queue", "revive", "last_revive", "free", "trial_used", "last_nudge",
+               "guard_tease"}
 AD_FIELDS = {"title", "media_kind", "file_id", "text_html", "buttons", "interval",
              "enabled", "delete_prev"}
 
