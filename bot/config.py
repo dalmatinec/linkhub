@@ -125,6 +125,13 @@ CREATOR_IDS = ({int(x) for x in os.getenv("CREATOR_IDS", "").replace(" ", "").sp
 CREATOR_CONTACT = os.getenv("CREATOR_CONTACT", "").strip()  # например @username, иначе возьмём юзернейм из базы
 
 
+# Связь с модератором (dalmatinec/baxi-guard). Оба бота слушают только 127.0.0.1, ключ одинаковый в .env обоих.
+# Пусто в BAXI_API_KEY: API Бакси не запускается, к модератору не ходим (копиям клиентов так и надо).
+BAXI_API_PORT = _int("BAXI_API_PORT", 8710)
+GUARD_API_URL = os.getenv("GUARD_API_URL", "").strip().rstrip("/")
+BAXI_API_KEY = os.getenv("BAXI_API_KEY", "").strip()
+
+
 def check() -> None:
     if not BOT_TOKEN:
         raise SystemExit("В .env не задан BOT_TOKEN")

@@ -105,7 +105,7 @@
 `.env` модератора: `GUARD_API_PORT=8711`, `BAXI_API_URL=http://127.0.0.1:8710`, `BAXI_API_KEY=...`.
 `.env` Бакси: `BAXI_API_PORT=8710`, `GUARD_API_URL=http://127.0.0.1:8711`, `BAXI_API_KEY=...`.
 
-**Сервер Бакси (делается в linkhub, когда модератор будет готов):**
+**Сервер Бакси** (сделано: `bot/services/api.py` и `bot/services/guardlink.py`, связать ботов на сервере: `bash /opt/linkhub/deploy/guard-link.sh`):
 
 - `GET /v1/chat/{chat_id}` → `{"known": true, "title": "...", "active": true, "paid": true, "trial": false,
   "free": false, "until": 1767225600}`. Модератор решает по этому, работать ли в чате платно

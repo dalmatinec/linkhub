@@ -75,6 +75,8 @@ async def rank_card(chat_id: int, user: User) -> str:
     place, total = await store.chat_rank_place(chat_id, user.id)
     lo, hi = catalog.xp_for(r["level"]), catalog.xp_for(r["level"] + 1)
     pet = await store.pet(user.id)
+    from bot.services import guardlink
+    warns = await guardlink.warns_line(chat_id, user.id)   # от модератора: «⚠️ предупреждения 2/3»
     return (f"👤 {mention(user.id, name)}\n\n"
             f"🏅 Ранг в этом чате: <b>{r['level']}</b> · {catalog.title_for(r['level'])}"
             + (f" · {place} место из {total}" if r["xp"] else "") + "\n"
@@ -82,7 +84,8 @@ async def rank_card(chat_id: int, user: User) -> str:
             f"🌍 Общий уровень: <b>{w['level']}</b> · {catalog.title_for(w['level'])} "
             f"(во всех чатах, #{await store.global_place(user.id)})\n"
             f"🪙 Монеты: <b>{w['coins']}</b>\n"
-            f"🐾 Питомец: {pet_title(pet) if pet else 'нет'}")
+            f"🐾 Питомец: {pet_title(pet) if pet else 'нет'}"
+            + (f"\n{warns}" if warns else ""))
 
 
 

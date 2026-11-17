@@ -180,6 +180,7 @@ async def card(target, chat_id: int, viewer: int = 0) -> None:
         [("🎲 Фишки", f"mc:s:{cid}:fx"), ("🛡 Правила", f"mc:s:{cid}:rules")],
         [("📝 Триггеры", f"mc:s:{cid}:trig"), ("📣 Зазывала", f"mc:s:{cid}:call")],
         [("📊 Статистика", f"mc:s:{cid}:stats"), ("🧰 Перенос и экспорт", f"mc:s:{cid}:tools")],
+        [("🛡 Модерация", f"mc:g:{cid}")],
         [("💳 Подключить платную" if c["free"] or c["trial"] else "💳 Продлить аренду", f"rt:{cid}", "success"),
          ("🆘 Поддержка", f"mc:sup:{cid}")],
         [("👀 Пробный ответ", f"mc:try:{cid}"), ("🧹 Стереть память", f"mc:w:{cid}")],
@@ -854,3 +855,62 @@ async def on_qday_add(message: Message, bot: Bot, state: FSMContext) -> None:
     await db.update_chat(cid, qday_queue="\n".join(queue[:100]))
     await message.answer(f"✅ Добавил {len(new)}, в очереди {min(len(queue), 100)}. Пришли ещё или нажми Готово.",
                          reply_markup=_kb([[("Готово", f"mc:s:{cid}:qday")]]))
+
+
+# ---------- 🛡 Модерация: данные модератора (dalmatinec/baxi-guard) ----------
+
+GUARD_KINDS = [("mute", "мутов"), ("warn", "предупреждений"), ("ban", "банов"), ("kick", "киков"), ("spam", "спама")]
+
+
+def _guard_counts(st: dict) -> str:
+    return ", ".join(f"{name} {int(st.get(k, 0) or 0)}" for k, name in GUARD_KINDS)
+
+
+async def guard_screen(target, chat_id: int) -> None:
+    from bot.services import guardlink
+    c = await db.get_chat(chat_id)
+    tease = "✅ вкл" if c["guard_tease"] else "▫️ выкл"
+    lines = [f"🛡 <b>Модерация</b> · {esc(c['title'] or str(chat_id))}", ""]
+    rows: list[list[tuple]] = []
+    info = await guardlink.guard_overview(chat_id) if guardlink.enabled() else None
+    if not guardlink.enabled():
+        lines.append("Модератор не подключён. Это отдельный бот: мут, бан, предупреждения, стоп-слова, "
+                     "антиспам, режим атаки. Спроси у владельца бота, как его добавить.")
+    elif info is None:
+        lines.append("Модератор сейчас не отвечает, данные появятся, когда он снова будет на связи.")
+    else:
+        st = info["settings"]
+        if not st.get("known"):
+            lines.append("Модератора нет в этом чате. Добавь его администратором, и здесь появятся его данные.")
+        else:
+            def on(v) -> str:
+                return "✅" if v else "▫️"
+            lines += [f"{on(st.get('stopwords'))} стоп-слова   {on(st.get('antispam'))} антиспам",
+                      f"{on(st.get('service'))} чистка служебных   {on(st.get('attack'))} режим атаки",
+                      f"⚠️ предупреждений до наказания: {st.get('warn_limit', 3)}",
+                      "", f"<b>За сутки:</b> {_guard_counts(info['day'])}",
+                      f"<b>За неделю:</b> {_guard_counts(info['week'])}"]
+            if not st.get("active", True):
+                lines += ["", "⏸ Модерация в этом чате сейчас не активна."]
+        username = (info["ping"] or {}).get("bot") or ""
+        if username:
+            rows.append([("⚙️ Настроить модерацию", f"https://t.me/{username}?start=s_{chat_id}", "primary")])
+    lines += ["", f"😏 Подколки: {tease}. Когда модератор наказывает, я иногда подкалываю в своём характере "
+                  "(не чаще раза в 10 минут). Предупреждения репутацию не снимают."]
+    rows.append([(f"😏 Подколки: {tease}", f"mc:gt:{chat_id}")])
+    rows.append([("⬅️ К чату", f"mc:o:{chat_id}")])
+    await _show(target, "\n".join(lines), _kb(rows))
+
+
+@router.callback_query(F.data.startswith(("mc:g:", "mc:gt:")))
+async def cb_guard(cb: CallbackQuery, bot: Bot, state: FSMContext) -> None:
+    await state.clear()
+    parts = cb.data.split(":")
+    chat_id = int(parts[2])
+    if not await _guard(cb, bot, chat_id):
+        return
+    if parts[1] == "gt":
+        c = await db.get_chat(chat_id)
+        await db.update_chat(chat_id, guard_tease=0 if c["guard_tease"] else 1)
+    await guard_screen(cb, chat_id)
+
